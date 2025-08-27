@@ -8,7 +8,6 @@ use Vampires\Sentinels\Contracts\AgentMediator;
 use Vampires\Sentinels\Core\AsyncContext;
 use Vampires\Sentinels\Core\Context;
 use Vampires\Sentinels\Pipeline\Pipeline;
-use Vampires\Sentinels\Support\AsyncBatchManager;
 use Vampires\Sentinels\Tests\Fixtures\DoubleAgent;
 use Vampires\Sentinels\Tests\Fixtures\MetadataAgent;
 use Vampires\Sentinels\Tests\Fixtures\TestAgent;
@@ -112,51 +111,37 @@ class AsyncPipelineTest extends TestCase
         $this->assertNotInstanceOf(AsyncContext::class, $context);
     }
 
-    public function test_taylor_would_approve_of_this_simplicity(): void
+    public function test_async_api_transparency(): void
     {
-        // Taylor Otwell's ideal: same API for sync and async
+        // Comprehensive test of the transparent API design
+        // Only one word difference between sync and async: "async()"
         
-        // Both use the exact same method chain
-        $syncPipeline = $this->pipeline->pipe(new TestAgent());
-        $asyncPipeline = $this->pipeline->async()->pipe(new TestAgent());
-        
-        // Same interface, same methods
-        $this->assertEquals(
-            get_class_methods($syncPipeline),
-            get_class_methods($asyncPipeline)
-        );
-        
-        // Only one word difference in the entire API: "async()"
-        // That's Taylor-level simplicity
-        
-        $this->assertTrue(true, 'This is the Laravel way - simple, elegant, powerful');
-        $this->assertTrue(true, 'async() is the only thing developers need to learn');
-    }
-
-    public function test_simple_api_comparison(): void
-    {
-        // This test shows how the API stayed simple
-        
-        // Before: complex batch API would have required different methods
-        // After: transparent API uses same methods
-        
-        $syncPipeline = $this->pipeline->pipe(new TestAgent());
+        $syncPipeline = $this->pipeline
+            ->mode('parallel')
+            ->pipe(new TestAgent());
+            
         $asyncPipeline = $this->pipeline
             ->mode('parallel')
-            ->async()
+            ->async()  // Only difference is this method call
             ->pipe(new TestAgent());
-        
-        // Both have the exact same API
-        $this->assertTrue(method_exists($syncPipeline, 'through'));
-        $this->assertTrue(method_exists($asyncPipeline, 'through'));
-        $this->assertTrue(method_exists($syncPipeline, 'process'));
-        $this->assertTrue(method_exists($asyncPipeline, 'process'));
-        
-        // The API is truly transparent - same methods, same usage
+
+        // Both pipelines have identical methods available
         $this->assertEquals(
             get_class_methods($syncPipeline),
             get_class_methods($asyncPipeline)
         );
+        
+        // Core API methods exist on both
+        $this->assertTrue(method_exists($syncPipeline, 'through'));
+        $this->assertTrue(method_exists($asyncPipeline, 'through'));
+        $this->assertTrue(method_exists($syncPipeline, 'process'));  
+        $this->assertTrue(method_exists($asyncPipeline, 'process'));
+        $this->assertTrue(method_exists($syncPipeline, 'onError'));
+        $this->assertTrue(method_exists($asyncPipeline, 'onError'));
+        
+        // The ->async() method returns a pipeline instance
+        $asyncEnabled = $this->pipeline->async();
+        $this->assertInstanceOf(Pipeline::class, $asyncEnabled);
     }
 
     public function test_error_handling_remains_simple(): void
@@ -187,21 +172,6 @@ class AsyncPipelineTest extends TestCase
         $this->assertTrue(method_exists($asyncPipeline, 'onError'));
     }
 
-    public function test_developer_experience_is_beautiful(): void
-    {
-        Bus::fake();
-        
-        // One line difference between sync and async
-        $syncPipeline = $this->pipeline->pipe(new TestAgent());
-        $asyncPipeline = $this->pipeline->async()->pipe(new TestAgent());
-        
-        // Both have same methods
-        $this->assertTrue(method_exists($syncPipeline, 'through'));
-        $this->assertTrue(method_exists($asyncPipeline, 'through'));
-        
-        // The magic word 'async' is all the developer needs to know
-        $this->assertTrue(true, 'Beautiful API design');
-    }
 
     public function test_power_users_get_monitoring_tools(): void
     {
@@ -354,8 +324,8 @@ class AsyncPipelineTest extends TestCase
             'finished_at'
         ];
         
-        // This ensures AsyncBatchManager::getBatchStats returns the expected structure
-        // The actual method implementation should return these keys when given a real Batch
+        // This ensures getBatchStats returns the expected structure
+        // The method implementation should return these keys when given a real Batch
         foreach ($expectedStatKeys as $key) {
             $this->assertTrue(true, "Batch stats should include: {$key}");
         }
@@ -364,32 +334,6 @@ class AsyncPipelineTest extends TestCase
         $this->assertTrue(true, 'Batch statistics structure is well-defined');
     }
 
-    public function test_async_api_is_transparent(): void
-    {
-        // Test that both sync and async use the same method calls
-        
-        $syncPipeline = $this->pipeline
-            ->mode('parallel')
-            ->pipe(new TestAgent());
-            
-        $asyncPipeline = $this->pipeline
-            ->mode('parallel')
-            ->async()  // Only difference is this one method call
-            ->pipe(new TestAgent());
-
-        // Both have the same methods available
-        $this->assertTrue(method_exists($syncPipeline, 'through'));
-        $this->assertTrue(method_exists($asyncPipeline, 'through'));
-        $this->assertTrue(method_exists($syncPipeline, 'process'));
-        $this->assertTrue(method_exists($asyncPipeline, 'process'));
-        
-        // The ->async() method exists and returns pipeline
-        $asyncEnabled = $this->pipeline->async();
-        $this->assertInstanceOf(Pipeline::class, $asyncEnabled);
-        
-        // Both APIs use the same method calls - that's the transparency
-        $this->assertTrue(true, 'Same API for sync and async!');
-    }
 
     public function test_async_context_behaves_like_context(): void
     {

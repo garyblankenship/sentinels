@@ -5,6 +5,7 @@ namespace Vampires\Sentinels\Pipeline;
 use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Vampires\Sentinels\Contracts\AgentContract;
 use Vampires\Sentinels\Contracts\AgentMediator;
 use Vampires\Sentinels\Contracts\AgentMiddlewareContract;
@@ -16,7 +17,6 @@ use Vampires\Sentinels\Events\PipelineCompleted;
 use Vampires\Sentinels\Events\PipelineStarted;
 use Vampires\Sentinels\Exceptions\PipelineException;
 use Vampires\Sentinels\Jobs\AgentExecutionJob;
-use Vampires\Sentinels\Support\AsyncBatchManager;
 
 /**
  * Main pipeline implementation for orchestrating agent execution.
@@ -338,12 +338,12 @@ class Pipeline implements PipelineContract
         // Create a job for each agent
         foreach ($agents as $agent) {
             $agentClass = is_string($agent) ? $agent : get_class($agent);
-            $jobId = AsyncBatchManager::generateJobIdentifier();
+            $jobId = uniqid('job_', true);
             
             $jobs[] = new AgentExecutionJob($context, $agentClass, $jobId);
         }
 
-        $batchName = config('sentinels.async.batch_name_prefix', 'Sentinels Pipeline') . ' - ' . $context->correlationId;
+        $batchName = 'Sentinels Pipeline - ' . $context->correlationId;
         
         $batch = Bus::batch($jobs)
             ->name($batchName)
@@ -378,11 +378,11 @@ class Pipeline implements PipelineContract
     protected function handleBatchCompletion(Batch $batch, Context $originalContext): void
     {
         try {
-            // Aggregate all results
-            $finalContext = AsyncBatchManager::aggregateResults($batch, $originalContext);
+            // Inline result aggregation
+            $finalContext = $this->aggregateBatchResults($batch, $originalContext);
             
             // Store final result for retrieval
-            AsyncBatchManager::storeFinalResult($batch, $finalContext);
+            $this->storeFinalBatchResult($batch, $finalContext);
             
             // Call success callback if defined
             if ($this->successCallback) {
@@ -416,7 +416,7 @@ class Pipeline implements PipelineContract
             );
             
             // Store error result
-            AsyncBatchManager::storeFinalResult($batch, $errorContext);
+            $this->storeFinalBatchResult($batch, $errorContext);
             
             // Call error handler if defined
             if ($this->errorHandler) {
@@ -442,15 +442,115 @@ class Pipeline implements PipelineContract
     protected function handleBatchCleanup(Batch $batch): void
     {
         // Schedule cleanup after a delay to ensure results can be retrieved
-        $delay = config('sentinels.async.cleanup_delay', 60);
+        dispatch(function () use ($batch) {
+            // Clean up batch cache entries
+            $patterns = [
+                "sentinels:batch:{$batch->id}:result:*",
+                "sentinels:batch:{$batch->id}:error:*",
+                "sentinels:batch:{$batch->id}:final",
+            ];
+            
+            foreach ($patterns as $pattern) {
+                if (method_exists(Cache::getStore(), 'connection')) {
+                    // Redis implementation
+                    $keys = Cache::getStore()->connection()->keys($pattern);
+                    foreach ($keys as $key) {
+                        Cache::forget($key);
+                    }
+                }
+            }
+        })->delay(60);
+    }
+
+    /**
+     * Aggregate results from a completed batch.
+     */
+    protected function aggregateBatchResults(Batch $batch, Context $originalContext): Context
+    {
+        // Fetch successful results
+        $results = collect();
+        $resultPattern = "sentinels:batch:{$batch->id}:result:*";
         
-        // Use a simple approach - clean up after delay
-        // In production, consider using a dedicated cleanup job
-        if ($delay > 0) {
-            dispatch(function () use ($batch) {
-                AsyncBatchManager::cleanupBatchCache($batch);
-            })->delay($delay);
+        if (method_exists(Cache::getStore(), 'connection')) {
+            $keys = Cache::getStore()->connection()->keys($resultPattern);
+            foreach ($keys as $key) {
+                $result = Cache::get($key);
+                if ($result instanceof Context) {
+                    $jobId = basename($key);
+                    $results->put($jobId, $result);
+                }
+            }
         }
+
+        // Fetch error results  
+        $errors = collect();
+        $errorPattern = "sentinels:batch:{$batch->id}:error:*";
+        
+        if (method_exists(Cache::getStore(), 'connection')) {
+            $keys = Cache::getStore()->connection()->keys($errorPattern);
+            foreach ($keys as $key) {
+                $error = Cache::get($key);
+                if (is_array($error)) {
+                    $jobId = basename($key);
+                    $errors->put($jobId, $error);
+                }
+            }
+        }
+
+        // Merge all successful agent results
+        $aggregatedPayload = [];
+        $mergedMetadata = $originalContext->metadata;
+        $mergedTags = $originalContext->tags;
+        $allErrors = $originalContext->errors;
+
+        foreach ($results as $jobId => $resultContext) {
+            // Collect payloads into an array
+            $aggregatedPayload[$jobId] = $resultContext->payload;
+            
+            // Merge metadata and tags
+            $mergedMetadata = array_merge($mergedMetadata, $resultContext->metadata);
+            $mergedTags = array_unique(array_merge($mergedTags, $resultContext->tags));
+            
+            // Collect any errors from individual contexts
+            $allErrors = array_merge($allErrors, $resultContext->errors);
+        }
+
+        // Add batch-level errors
+        foreach ($errors as $error) {
+            $allErrors[] = sprintf(
+                'Agent %s failed: %s',
+                $error['agent_class'] ?? 'unknown',
+                $error['message'] ?? 'Unknown error'
+            );
+        }
+
+        // Create the final aggregated context
+        return new Context(
+            payload: $aggregatedPayload,
+            metadata: array_merge($mergedMetadata, [
+                'batch_id' => $batch->id,
+                'parallel_execution' => true,
+                'job_count' => $batch->totalJobs,
+                'successful_jobs' => count($results),
+                'failed_jobs' => count($errors),
+            ]),
+            correlationId: $originalContext->correlationId,
+            tags: array_merge($mergedTags, ['async_parallel']),
+            traceId: $originalContext->traceId,
+            cancelled: $originalContext->cancelled,
+            errors: $allErrors,
+            startTime: $originalContext->startTime,
+        );
+    }
+
+    /**
+     * Store final result for batch retrieval.
+     */
+    protected function storeFinalBatchResult(Batch $batch, Context $context): void
+    {
+        $cacheKey = "sentinels:batch:{$batch->id}:final";
+        $ttl = config('sentinels.async.cache_ttl', 3600);
+        Cache::put($cacheKey, $context, $ttl);
     }
 
     /**

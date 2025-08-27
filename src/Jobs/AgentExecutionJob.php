@@ -66,10 +66,8 @@ class AgentExecutionJob implements ShouldQueue
             $this->cacheResult($resultContext);
 
         } catch (\Throwable $exception) {
-            // Cache the error for batch aggregation
-            $this->cacheError($exception);
-            
             // Re-throw to trigger batch failure handling
+            // Error will be cached automatically in failed() method
             throw new AgentException(
                 "Agent {$this->agentClass} failed: " . $exception->getMessage(),
                 $exception->getCode(),
@@ -96,7 +94,8 @@ class AgentExecutionJob implements ShouldQueue
             return;
         }
 
-        $key = $this->getCacheKey('result');
+        $batchId = $this->batch()->id;
+        $key = "sentinels:batch:{$batchId}:result:{$this->jobIdentifier}";
         $ttl = config('sentinels.async.cache_ttl', 3600);
 
         Cache::put($key, $result, $ttl);
@@ -111,7 +110,8 @@ class AgentExecutionJob implements ShouldQueue
             return;
         }
 
-        $key = $this->getCacheKey('error');
+        $batchId = $this->batch()->id;
+        $key = "sentinels:batch:{$batchId}:error:{$this->jobIdentifier}";
         $ttl = config('sentinels.async.cache_ttl', 3600);
 
         $errorData = [
@@ -126,28 +126,5 @@ class AgentExecutionJob implements ShouldQueue
         Cache::put($key, $errorData, $ttl);
     }
 
-    /**
-     * Get the cache key for this job's result.
-     */
-    protected function getCacheKey(string $type = 'result'): string
-    {
-        $batchId = $this->batch()?->id ?? 'unknown';
-        return "sentinels:batch:{$batchId}:{$type}:{$this->jobIdentifier}";
-    }
 
-    /**
-     * Get the job identifier for debugging.
-     */
-    public function getJobIdentifier(): string
-    {
-        return $this->jobIdentifier;
-    }
-
-    /**
-     * Get the agent class being executed.
-     */
-    public function getAgentClass(): string
-    {
-        return $this->agentClass;
-    }
 }

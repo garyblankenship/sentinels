@@ -170,17 +170,6 @@ return [
         */
         'cache_ttl' => env('SENTINELS_ASYNC_CACHE_TTL', 3600),
 
-        /*
-        | Batch name prefix for identification
-        | Full name format: "{prefix} - {correlation_id}"
-        */
-        'batch_name_prefix' => env('SENTINELS_BATCH_PREFIX', 'Sentinels Pipeline'),
-
-        /*
-        | Cleanup delay (seconds)
-        | How long to wait before cleaning up batch cache entries
-        */
-        'cleanup_delay' => env('SENTINELS_CLEANUP_DELAY', 60),
 
         /*
         | Maximum batch job timeout (seconds)
@@ -200,7 +189,6 @@ return [
         'validation' => [
             'check_serialization' => env('SENTINELS_CHECK_SERIALIZATION', true),
             'max_payload_size' => env('SENTINELS_MAX_ASYNC_PAYLOAD', 1024 * 1024), // 1MB
-            'strict_mode' => env('SENTINELS_ASYNC_STRICT', false),
         ],
     ],
 
@@ -218,9 +206,5 @@ return [
         'max_context_size' => 10 * 1024 * 1024, // 10MB
         'allowed_classes' => [], // For unserialization
         'sandbox_agents' => env('SENTINELS_SANDBOX', false),
-        'async_serialization' => [
-            'require_json_safe' => env('SENTINELS_REQUIRE_JSON_SAFE', true),
-            'warn_on_objects' => env('SENTINELS_WARN_ON_OBJECTS', true),
-        ],
     ],
 ];

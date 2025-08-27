@@ -4,7 +4,7 @@ namespace Vampires\Sentinels\Core;
 
 use Illuminate\Bus\Batch;
 use Illuminate\Support\Facades\Bus;
-use Vampires\Sentinels\Support\AsyncBatchManager;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Asynchronous Context that transparently handles batch execution.
@@ -95,8 +95,9 @@ readonly class AsyncContext extends Context
             $this->waitForCompletion();
         }
 
-        // Get final result
-        $resolved = AsyncBatchManager::getFinalResult($this->batch);
+        // Get final result from cache
+        $cacheKey = "sentinels:batch:{$this->batch->id}:final";
+        $resolved = Cache::get($cacheKey);
         return $resolved ?: $this->addError('Async pipeline failed to produce results');
     }
 
@@ -182,7 +183,19 @@ readonly class AsyncContext extends Context
             return null;
         }
 
-        return AsyncBatchManager::getBatchStats($this->batch);
+        return [
+            'id' => $this->batch->id,
+            'name' => $this->batch->name,
+            'total_jobs' => $this->batch->totalJobs,
+            'pending_jobs' => $this->batch->pendingJobs,
+            'processed_jobs' => $this->batch->processedJobs(),
+            'failed_jobs' => $this->batch->failedJobs,
+            'progress' => $this->batch->progress(),
+            'finished' => $this->batch->finished(),
+            'cancelled' => $this->batch->cancelled(),
+            'created_at' => $this->batch->createdAt,
+            'finished_at' => $this->batch->finishedAt,
+        ];
     }
 
     /**
@@ -210,35 +223,17 @@ readonly class AsyncContext extends Context
     }
 
     /**
-     * Convert to array (resolves if needed).
+     * Proxy method calls to resolved context for transparent API.
      */
-    public function toArray(): array
+    public function __call(string $method, array $arguments): mixed
     {
-        return $this->getResolvedContext()->toArray();
-    }
-
-    /**
-     * Check if context has errors (resolves if needed).
-     */
-    public function hasErrors(): bool
-    {
-        return $this->getResolvedContext()->hasErrors();
-    }
-
-    /**
-     * Check if context is cancelled (resolves if needed).
-     */
-    public function isCancelled(): bool
-    {
-        return $this->getResolvedContext()->isCancelled();
-    }
-
-    /**
-     * Get payload size (resolves if needed).
-     */
-    public function getPayloadSize(): int
-    {
-        return $this->getResolvedContext()->getPayloadSize();
+        $resolved = $this->getResolvedContext();
+        
+        if (!method_exists($resolved, $method)) {
+            throw new \BadMethodCallException("Method {$method} does not exist on Context");
+        }
+        
+        return $resolved->{$method}(...$arguments);
     }
 
     /**
