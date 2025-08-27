@@ -128,7 +128,7 @@ class Pipeline implements PipelineContract
                 // Create a generic exception from the context errors
                 $errorMessage = implode('; ', $result->errors);
                 $exception = new \RuntimeException($errorMessage);
-                $result = call_user_func($this->errorHandler, $context, $exception);
+                $result = call_user_func($this->errorHandler, $result, $exception);
             } elseif (!$result->hasErrors() && $this->successCallback) {
                 // Only call success callback if there are no errors
                 call_user_func($this->successCallback, $result);
@@ -416,9 +416,17 @@ class Pipeline implements PipelineContract
         if (is_callable($stage) && !is_string($stage)) {
             $result = call_user_func($stage, $context->payload, $context);
 
-            return is_array($result) && isset($result[1]) && $result[1] instanceof Context
-                ? $result[1]->with($result[0])
-                : $context->with($result);
+            // Handle different return types from callable stages
+            if (is_array($result) && isset($result[1]) && $result[1] instanceof Context) {
+                // Return [payload, context] tuple
+                return $result[1]->with($result[0]);
+            } elseif ($result instanceof Context) {
+                // Return Context directly (e.g., from validation stages)
+                return $result;
+            } else {
+                // Return simple value as new payload
+                return $context->with($result);
+            }
         }
 
         // Agent string
@@ -446,6 +454,154 @@ class Pipeline implements PipelineContract
     protected function fireEvent(object $event): void
     {
         $this->events->dispatch($event);
+    }
+
+    /**
+     * Add debugging tap to the pipeline.
+     *
+     * Executes a callback with the context without modifying it.
+     * Useful for logging, debugging, or side effects during processing.
+     *
+     * @param callable(Context): void $callback The debug callback
+     */
+    public function tap(callable $callback): self
+    {
+        return $this->pipe(function (mixed $payload, Context $context) use ($callback): Context {
+            call_user_func($callback, $context);
+            return $context;
+        });
+    }
+
+    /**
+     * Dump context information for debugging.
+     *
+     * Outputs context information using dump() for debugging purposes.
+     * In production, this should be used sparingly.
+     *
+     * @param string|null $label Optional label for the dump output
+     */
+    public function dump(string $label = null): self
+    {
+        return $this->pipe(function (mixed $payload, Context $context) use ($label): Context {
+            if (function_exists('dump')) {
+                $output = [
+                    'payload' => $context->payload,
+                    'metadata' => $context->metadata,
+                    'tags' => $context->tags,
+                    'correlationId' => $context->correlationId,
+                    'errors' => $context->errors,
+                    'cancelled' => $context->cancelled,
+                    'elapsedTime' => $context->getElapsedTime(),
+                ];
+
+                if ($label) {
+                    dump("[$label]", $output);
+                } else {
+                    dump($output);
+                }
+            }
+            return $context;
+        });
+    }
+
+    /**
+     * Send context information to Ray for debugging.
+     *
+     * If Spatie Ray is available, sends context information for debugging.
+     * Falls back to dump() if Ray is not available.
+     *
+     * @param string|null $label Optional label for the Ray output
+     */
+    public function ray(string $label = null): self
+    {
+        return $this->pipe(function (mixed $payload, Context $context) use ($label): Context {
+            if (function_exists('ray')) {
+                $ray = ray($context->toArray());
+                if ($label) {
+                    $ray->label($label);
+                }
+            } elseif (function_exists('dump')) {
+                // Fallback to dump if Ray is not available
+                if ($label) {
+                    dump("Ray: $label", $context->toArray());
+                } else {
+                    dump('Ray Debug', $context->toArray());
+                }
+            }
+            return $context;
+        });
+    }
+
+    /**
+     * Log context information at specified level.
+     *
+     * Logs context information using Laravel's logger with appropriate
+     * context filtering to avoid logging sensitive information.
+     *
+     * @param string $level Log level (debug, info, warning, error)
+     * @param string|null $message Optional message
+     * @param array<string> $excludeKeys Metadata keys to exclude from logs
+     */
+    public function logContext(
+        string $level = 'debug',
+        string $message = null,
+        array $excludeKeys = ['password', 'token', 'secret', 'key']
+    ): self {
+        return $this->pipe(function (mixed $payload, Context $context) use ($level, $message, $excludeKeys): Context {
+            if (!app()->bound('log')) {
+                return $context;
+            }
+
+            // Filter sensitive metadata
+            $filteredMetadata = $context->metadata;
+            foreach ($excludeKeys as $key) {
+                if (isset($filteredMetadata[$key])) {
+                    $filteredMetadata[$key] = '[FILTERED]';
+                }
+            }
+
+            $logData = [
+                'correlation_id' => $context->correlationId,
+                'trace_id' => $context->traceId,
+                'tags' => $context->tags,
+                'metadata' => $filteredMetadata,
+                'has_errors' => $context->hasErrors(),
+                'error_count' => count($context->errors),
+                'elapsed_time' => $context->getElapsedTime(),
+                'payload_size' => $context->getPayloadSize(),
+            ];
+
+            $message = $message ?? 'Pipeline context debug';
+
+            app('log')->{$level}($message, $logData);
+            return $context;
+        });
+    }
+
+    /**
+     * Validate context at this point in the pipeline.
+     *
+     * Adds validation step with custom validation logic.
+     * Continues processing if validation passes, adds errors if not.
+     *
+     * @param callable(Context): bool|array $validator Validation callback
+     * @param string $errorMessage Error message if validation fails
+     */
+    public function validate(callable $validator, string $errorMessage = 'Pipeline validation failed'): self
+    {
+        return $this->pipe(function (mixed $payload, Context $context) use ($validator, $errorMessage): Context {
+            $result = $validator($context);
+
+            if ($result === false) {
+                // Hard failure - add error and cancel processing
+                return $context->addError($errorMessage)->cancel();
+            } elseif (is_array($result) && !empty($result)) {
+                // Soft failure - add errors but continue processing
+                return $context->addErrors($result);
+            }
+
+            return $context;
+        });
     }
 
     /**
