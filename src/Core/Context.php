@@ -266,10 +266,57 @@ readonly class Context
 
     /**
      * Get the size of the payload in bytes (approximation).
+     * 
+     * Uses JSON encoding instead of unsafe serialize() for size calculation.
      */
     public function getPayloadSize(): int
     {
-        return strlen(serialize($this->payload));
+        try {
+            // Try JSON encoding first
+            $encoded = json_encode($this->payload, JSON_THROW_ON_ERROR);
+            return strlen($encoded);
+        } catch (\JsonException $e) {
+            // Fallback to safe size estimation for non-JSON-serializable data
+            return $this->estimatePayloadSize($this->payload);
+        }
+    }
+    
+    /**
+     * Estimate payload size for complex data structures that can't be JSON encoded.
+     */
+    private function estimatePayloadSize(mixed $payload): int
+    {
+        if ($payload === null) {
+            return 4; // "null"
+        }
+        
+        if (is_bool($payload)) {
+            return $payload ? 4 : 5; // "true" or "false"
+        }
+        
+        if (is_numeric($payload)) {
+            return strlen((string) $payload);
+        }
+        
+        if (is_string($payload)) {
+            return strlen($payload);
+        }
+        
+        if (is_array($payload)) {
+            $size = 2; // []
+            foreach ($payload as $key => $value) {
+                $size += strlen((string) $key) + 3; // key + "":
+                $size += $this->estimatePayloadSize($value) + 1; // value + ,
+            }
+            return $size;
+        }
+        
+        if (is_object($payload)) {
+            // For objects, return a reasonable estimate based on class name
+            return strlen(get_class($payload)) + 20; // class name + some overhead
+        }
+        
+        return 50; // fallback for unknown types
     }
 
     /**

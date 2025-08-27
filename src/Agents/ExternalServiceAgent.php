@@ -371,6 +371,10 @@ abstract class ExternalServiceAgent extends BaseAgent
         // Circuit is open if we've exceeded failure threshold
         if ($state['failures'] >= $this->circuitBreaker['failure_threshold']) {
             // Check if recovery timeout has passed
+            if ($state['last_failure'] === null) {
+                return false; // No last failure time, circuit should not be open
+            }
+            
             $recoveryTime = $state['last_failure'] + $this->circuitBreaker['recovery_timeout'];
             
             return time() < $recoveryTime;
@@ -456,7 +460,7 @@ abstract class ExternalServiceAgent extends BaseAgent
         }
 
         $prefix = $this->cacheConfig['key_prefix'] ?? $this->getServiceName();
-        $payloadHash = md5(serialize($context->payload));
+        $payloadHash = $this->createSecurePayloadHash($context->payload);
 
         return "external_service:{$prefix}:{$payloadHash}";
     }
@@ -519,6 +523,52 @@ abstract class ExternalServiceAgent extends BaseAgent
     private function isCacheEnabled(): bool
     {
         return $this->cacheConfig['enabled'] && $this->cacheConfig['ttl'] > 0;
+    }
+
+    /**
+     * Create a secure hash of the payload for cache key generation.
+     * 
+     * Uses JSON encoding with SHA-256 hash instead of unsafe serialize() + MD5.
+     * Handles circular references gracefully.
+     */
+    private function createSecurePayloadHash(mixed $payload): string
+    {
+        try {
+            // First, try standard JSON encoding
+            $jsonPayload = json_encode($payload, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            // If JSON encoding fails (e.g., circular references), create a fallback representation
+            $jsonPayload = $this->createSafePayloadRepresentation($payload);
+        }
+        
+        return hash('sha256', $jsonPayload);
+    }
+    
+    /**
+     * Create a safe string representation of payload that handles circular references.
+     */
+    private function createSafePayloadRepresentation(mixed $payload): string
+    {
+        if (is_object($payload)) {
+            return sprintf('object(%s)', get_class($payload));
+        }
+        
+        if (is_array($payload)) {
+            $safeArray = [];
+            foreach ($payload as $key => $value) {
+                if (is_object($value)) {
+                    $safeArray[$key] = sprintf('object(%s)', get_class($value));
+                } elseif (is_array($value)) {
+                    // Limit depth to prevent infinite recursion
+                    $safeArray[$key] = '[array]';
+                } else {
+                    $safeArray[$key] = $value;
+                }
+            }
+            return json_encode($safeArray, JSON_THROW_ON_ERROR);
+        }
+        
+        return json_encode($payload, JSON_THROW_ON_ERROR);
     }
 
     /**
