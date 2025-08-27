@@ -1,0 +1,215 @@
+# .repomixignore - Files to exclude from code audits and security reviews
+
+# ================================
+# SECURITY & SENSITIVE FILES
+# ================================
+# Never include these in external code reviews
+.env*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.csr
+secrets/
+config/secrets/
+storage/app/
+storage/logs/
+
+# ================================
+# BUILD & DEPENDENCY FILES  
+# ================================
+# Generated files that bloat audit output
+vendor/
+node_modules/
+bower_components/
+build/
+dist/
+public/build/
+*.lock
+*.cache
+.next/
+.nuxt/
+
+# ================================
+# TEMPORARY & CACHE FILES
+# ================================
+# Not relevant for code review
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.pid
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+bootstrap/cache/
+
+# ================================
+# LOG & DEBUG FILES
+# ================================
+# Can contain sensitive runtime data
+*.log
+logs/
+storage/logs/
+laravel.log
+xdebug/
+*.trace
+
+# ================================
+# VERSION CONTROL & CI/CD
+# ================================
+# Internal tooling, not core code
+.git/
+.gitignore
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+.jenkins/
+Jenkinsfile
+
+# ================================
+# IDE & EDITOR FILES
+# ================================
+# Personal development environment files
+.vscode/
+.idea/
+*.sublime-*
+.brackets.json
+.project
+.classpath
+.settings/
+*.code-workspace
+
+# ================================
+# TEST & COVERAGE REPORTS
+# ================================
+# Generated test artifacts
+coverage/
+.coverage
+.nyc_output/
+.phpunit.result.cache
+clover.xml
+junit.xml
+tests/coverage/
+storage/coverage/
+
+# ================================
+# DOCUMENTATION ASSETS
+# ================================
+# Focus on code, not documentation images/videos
+docs/images/
+docs/videos/
+docs/assets/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.pdf
+*.mov
+*.mp4
+
+# ================================
+# PACKAGE & RELEASE FILES
+# ================================
+# Distribution files not relevant for audit
+*.tar.gz
+*.zip
+*.rar
+*.deb
+*.rpm
+releases/
+dist/
+
+# ================================
+# CONFIGURATION OVERRIDES
+# ================================
+# Local/personal configuration files
+config/local/
+.env.local
+.env.development
+.env.testing
+.env.production
+docker-compose.override.yml
+vagrant/
+
+# ================================
+# LARAVEL SPECIFIC EXCLUSIONS
+# ================================
+# Laravel framework files not needed in audit
+public/hot
+public/storage
+storage/app/public
+storage/debugbar/
+bootstrap/cache/*.php
+.phpunit.result.cache
+
+# ================================
+# DEVELOPMENT TOOLS OUTPUT
+# ================================
+# Tool-generated files
+.phpcs.xml
+.php_cs.cache
+.phpmd.xml
+.phpstan.cache
+.psalm.cache
+_ide_helper.php
+_ide_helper_models.php
+.phpstorm.meta.php
+
+# ================================  
+# BACKUP & ARCHIVE FILES
+# ================================
+# Backup files that shouldn't be audited
+*.backup
+*.bak
+*.old
+*.orig
+archive/
+backups/
+
+# ================================
+# SECURITY VERIFICATION FILES
+# ================================
+# Our own security testing files (exclude from external audit)
+security_fix_verification.php
+SECURITY_FIXES_SUMMARY.md
+
+# ================================
+# PACKAGE MANAGER FILES
+# ================================
+# Dependency management (include main files, exclude locks)
+composer.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ================================
+# SPECIFIC PROJECT EXCLUSIONS
+# ================================
+# Sentinels-specific files to exclude from audit
+examples/*.log
+tests/fixtures/large_data/
+storage/sentinels/cache/
+docs/generated/
+
+# ================================
+# BINARY & COMPILED FILES
+# ================================
+# Non-text files that can't be meaningfully audited
+*.exe
+*.dll
+*.so
+*.dylib
+*.class
+*.jar
+*.war
+*.ear
+*.pyc
+*.pyo

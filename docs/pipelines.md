@@ -90,6 +90,183 @@ $results = Sentinels::pipeline()
     ->through($orders); // Each order processed through all agents
 ```
 
+## Asynchronous Pipeline Execution
+
+Sentinels supports true asynchronous pipeline execution using Laravel's queue system. The API is **identical** to synchronous pipelines - just add `->async()` and everything else works transparently.
+
+### ✨ The Magic Word: `async()`
+
+The only difference between sync and async is **one word**:
+
+```php
+// Synchronous (6+ seconds total)
+$result = Sentinels::pipeline()
+    ->mode('parallel')
+    ->pipe(new ApiCallAgent())        // 2 second API call
+    ->pipe(new DatabaseQueryAgent())  // 1 second DB query  
+    ->pipe(new ExternalServiceAgent()) // 3 second service call
+    ->through($userData);
+
+// Asynchronous (0.01s dispatch + 3s parallel execution)
+$result = Sentinels::pipeline()
+    ->mode('parallel')
+    ->async() // 🎯 The magic word
+    ->pipe(new ApiCallAgent())        // All three run simultaneously
+    ->pipe(new DatabaseQueryAgent())  // in the background
+    ->pipe(new ExternalServiceAgent()) 
+    ->through($userData);
+
+// Same API, same variable, just faster! 🚀
+```
+
+### 🪄 Transparent Auto-Waiting
+
+Async results work exactly like sync results - access properties normally:
+
+```php
+$result = Sentinels::pipeline()
+    ->async()
+    ->pipe(new ApiCallAgent())
+    ->through($userData);
+
+// Accessing properties automatically waits for completion
+echo $result->payload;        // Auto-waits if needed
+echo $result->correlationId;  // Works immediately  
+echo $result->getElapsedTime(); // Shows total time including async
+
+// It's still a Context - same properties, same methods
+if ($result->hasErrors()) {
+    foreach ($result->errors as $error) {
+        echo "Error: $error";
+    }
+}
+```
+
+### 🔍 Optional Monitoring for Power Users
+
+Need to monitor progress? Async results provide additional methods:
+
+```php
+$result = Sentinels::pipeline()
+    ->async()
+    ->pipe(new SlowApiAgent())
+    ->through($data);
+
+// Optional monitoring (most developers won't need this)
+echo "Progress: {$result->getProgress()}%";  // 0-100
+echo "Batch ID: {$result->getBatchId()}";   // For logging
+echo "Ready: " . ($result->isReady() ? 'Yes' : 'No');
+
+// Force explicit waiting (usually not needed)
+$result->wait(timeout: 60); // Wait up to 60 seconds
+
+// Access payload triggers auto-wait anyway
+echo $result->payload; // Already waited above, so instant
+```
+
+### 🛠️ Error Handling (Same as Sync)
+
+Error handling works identically to synchronous pipelines:
+
+```php
+$result = Sentinels::pipeline()
+    ->async()
+    ->pipe(new ReliableAgent())
+    ->pipe(new UnreliableAgent()) // May fail
+    ->onError(function (Context $context, \Throwable $e) {
+        logger()->error('Pipeline failed', [
+            'correlation_id' => $context->correlationId,
+            'error' => $e->getMessage(),
+        ]);
+        return $context->addError('Pipeline failed: ' . $e->getMessage());
+    })
+    ->through($data);
+
+// Check errors the same way as sync
+if ($result->hasErrors()) {
+    foreach ($result->errors as $error) {
+        echo "Error: $error";
+    }
+}
+```
+
+### ⚙️ Configuration (Optional)
+
+Async works out of the box. Optionally tune in `config/sentinels.php`:
+
+```php
+'async' => [
+    'queue' => 'sentinels',    // Queue name (default: 'sentinels')
+    'job_timeout' => 120,      // Job timeout (default: 120s)
+    'job_tries' => 3,          // Retry attempts (default: 3)
+],
+```
+
+### 🚀 Performance Impact
+
+The difference is dramatic for I/O-bound operations:
+
+```php
+// Before: 6+ seconds blocking
+$slowResult = Sentinels::pipeline()
+    ->mode('parallel')
+    ->pipe(new SlowApiAgent())     // 2s 
+    ->pipe(new SlowDbAgent())      // 1s
+    ->pipe(new SlowServiceAgent()) // 3s
+    ->through($data); 
+// User waits 6+ seconds 😴
+
+// After: ~3 seconds total, immediate response
+$fastResult = Sentinels::pipeline()
+    ->mode('parallel')
+    ->async() // Magic word
+    ->pipe(new SlowApiAgent())     // 2s (parallel)
+    ->pipe(new SlowDbAgent())      // 1s (parallel) 
+    ->pipe(new SlowServiceAgent()) // 3s (parallel)
+    ->through($data);
+// User gets immediate response, agents run in background 🚀
+
+// Web controllers can return immediately
+return response()->json([
+    'status' => 'processing',
+    'result_id' => $fastResult->correlationId,
+]);
+```
+
+### 💡 Best Practices
+
+1. **Start sync, scale async**: Begin with sync pipelines, add `->async()` when you need performance
+2. **Use for I/O-bound work**: API calls, database queries, file operations benefit most  
+3. **Keep payloads simple**: Stick to arrays, strings, numbers - avoid complex objects
+4. **Web-friendly pattern**: Use async for user-facing endpoints, sync for background jobs
+5. **Monitor when needed**: Most pipelines don't need monitoring - use it for critical flows
+6. **Test both modes**: Your pipeline should work sync or async
+7. **Let it auto-wait**: Don't overthink it - accessing properties "just works"
+
+### 📋 Requirements  
+
+- Laravel Queue configured (`database`, `redis`, etc.)
+- Batch table: `php artisan queue:batches-table && php artisan migrate`
+- Queue workers running: `php artisan queue:work`
+- That's it! 🎉
+
+### 🧠 Mental Model
+
+```php
+// Think of async as a performance optimization, not a different API
+
+// This:
+$result = pipeline->through($data);
+
+// Becomes this:
+$result = pipeline->async()->through($data);
+
+// Same variable, same usage, just faster execution
+// The complexity is hidden, the power is available when needed
+```
+
+---
+
 ## Pipeline Configuration
 
 ### Timeout Settings

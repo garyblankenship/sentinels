@@ -2,16 +2,21 @@
 
 namespace Vampires\Sentinels\Pipeline;
 
+use Illuminate\Bus\Batch;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
+use Illuminate\Support\Facades\Bus;
 use Vampires\Sentinels\Contracts\AgentContract;
 use Vampires\Sentinels\Contracts\AgentMediator;
 use Vampires\Sentinels\Contracts\AgentMiddlewareContract;
 use Vampires\Sentinels\Contracts\PipelineContract;
+use Vampires\Sentinels\Core\AsyncContext;
 use Vampires\Sentinels\Core\Context;
 use Vampires\Sentinels\Enums\PipelineMode;
 use Vampires\Sentinels\Events\PipelineCompleted;
 use Vampires\Sentinels\Events\PipelineStarted;
 use Vampires\Sentinels\Exceptions\PipelineException;
+use Vampires\Sentinels\Jobs\AgentExecutionJob;
+use Vampires\Sentinels\Support\AsyncBatchManager;
 
 /**
  * Main pipeline implementation for orchestrating agent execution.
@@ -67,6 +72,11 @@ class Pipeline implements PipelineContract
     protected array $stats = [];
 
     /**
+     * Whether this pipeline should execute asynchronously.
+     */
+    protected bool $isAsync = false;
+
+    /**
      * Create a new pipeline instance.
      */
     public function __construct(
@@ -87,17 +97,31 @@ class Pipeline implements PipelineContract
 
     /**
      * Process the given input through the pipeline.
+     * 
+     * For sync pipelines, returns the final payload.
+     * For async pipelines, returns AsyncContext for transparent handling.
      */
     public function through(mixed $input): mixed
     {
         $context = Context::create($input);
         $result = $this->process($context);
 
+        // For async contexts, return the context itself for transparent API
+        if ($result instanceof AsyncContext) {
+            return $result;
+        }
+
+        // For sync contexts, return the payload as before
         return $result->payload;
     }
 
     /**
      * Process the given context through the pipeline.
+     *
+     * Returns Context for synchronous execution or AsyncContext for asynchronous execution.
+     * Both extend Context, so the API remains identical.
+     *
+     * @return Context Context for sync, AsyncContext for async (both are Context)
      */
     public function process(Context $context): Context
     {
@@ -251,6 +275,19 @@ class Pipeline implements PipelineContract
     }
 
     /**
+     * Enable asynchronous execution for this pipeline.
+     *
+     * When enabled, parallel pipelines will be executed using Laravel queues
+     * for true asynchronous processing.
+     */
+    public function async(bool $async = true): self
+    {
+        $this->isAsync = $async;
+
+        return $this;
+    }
+
+    /**
      * Get all stages in this pipeline.
      */
     public function getStages(): array
@@ -286,8 +323,134 @@ class Pipeline implements PipelineContract
         $clone->timeout = $this->timeout;
         $clone->errorHandler = $this->errorHandler;
         $clone->successCallback = $this->successCallback;
+        $clone->isAsync = $this->isAsync;
 
         return $clone;
+    }
+
+    /**
+     * Dispatch agents as an async batch and return AsyncContext.
+     */
+    protected function dispatchAsyncBatch(Context $context, array $agents): AsyncContext
+    {
+        $jobs = [];
+        
+        // Create a job for each agent
+        foreach ($agents as $agent) {
+            $agentClass = is_string($agent) ? $agent : get_class($agent);
+            $jobId = AsyncBatchManager::generateJobIdentifier();
+            
+            $jobs[] = new AgentExecutionJob($context, $agentClass, $jobId);
+        }
+
+        $batchName = config('sentinels.async.batch_name_prefix', 'Sentinels Pipeline') . ' - ' . $context->correlationId;
+        
+        $batch = Bus::batch($jobs)
+            ->name($batchName)
+            ->then(function (Batch $batch) use ($context) {
+                $this->handleBatchCompletion($batch, $context);
+            })
+            ->catch(function (Batch $batch, \Throwable $e) use ($context) {
+                $this->handleBatchFailure($batch, $context, $e);
+            })
+            ->finally(function (Batch $batch) {
+                $this->handleBatchCleanup($batch);
+            })
+            ->dispatch();
+
+        // Return AsyncContext that transparently handles the batch
+        return AsyncContext::createWithBatch(
+            originalPayload: $context->payload,
+            originalMetadata: $context->metadata,
+            correlationId: $context->correlationId,
+            tags: $context->tags,
+            traceId: $context->traceId,
+            cancelled: $context->cancelled,
+            errors: $context->errors,
+            startTime: $context->startTime,
+            batch: $batch
+        );
+    }
+
+    /**
+     * Handle successful batch completion.
+     */
+    protected function handleBatchCompletion(Batch $batch, Context $originalContext): void
+    {
+        try {
+            // Aggregate all results
+            $finalContext = AsyncBatchManager::aggregateResults($batch, $originalContext);
+            
+            // Store final result for retrieval
+            AsyncBatchManager::storeFinalResult($batch, $finalContext);
+            
+            // Call success callback if defined
+            if ($this->successCallback) {
+                call_user_func($this->successCallback, $finalContext);
+            }
+            
+            // Fire pipeline completed event
+            $this->fireEvent(new PipelineCompleted($originalContext, $finalContext, $this));
+            
+        } catch (\Throwable $e) {
+            // Log the aggregation error but don't fail the batch
+            if (app()->bound('log')) {
+                app('log')->error('Failed to aggregate batch results', [
+                    'batch_id' => $batch->id,
+                    'error' => $e->getMessage(),
+                    'context_id' => $originalContext->correlationId,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Handle batch failure.
+     */
+    protected function handleBatchFailure(Batch $batch, Context $originalContext, \Throwable $exception): void
+    {
+        try {
+            // Create error context
+            $errorContext = $originalContext->addError(
+                'Batch execution failed: ' . $exception->getMessage()
+            );
+            
+            // Store error result
+            AsyncBatchManager::storeFinalResult($batch, $errorContext);
+            
+            // Call error handler if defined
+            if ($this->errorHandler) {
+                call_user_func($this->errorHandler, $errorContext, $exception);
+            }
+            
+        } catch (\Throwable $e) {
+            // Log the error handling failure
+            if (app()->bound('log')) {
+                app('log')->error('Failed to handle batch failure', [
+                    'batch_id' => $batch->id,
+                    'original_error' => $exception->getMessage(),
+                    'handler_error' => $e->getMessage(),
+                    'context_id' => $originalContext->correlationId,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Handle batch cleanup.
+     */
+    protected function handleBatchCleanup(Batch $batch): void
+    {
+        // Schedule cleanup after a delay to ensure results can be retrieved
+        $delay = config('sentinels.async.cleanup_delay', 60);
+        
+        // Use a simple approach - clean up after delay
+        // In production, consider using a dedicated cleanup job
+        if ($delay > 0) {
+            dispatch(function () use ($batch) {
+                AsyncBatchManager::cleanupBatchCache($batch);
+            })->delay($delay);
+        }
     }
 
     /**
@@ -340,28 +503,41 @@ class Pipeline implements PipelineContract
     }
 
     /**
-     * Process stages in parallel (simulated for v0.1).
+     * Process stages in parallel.
+     *
+     * When async mode is enabled, agents are dispatched to queues and
+     * an AsyncContext is returned for transparent result handling.
+     * Otherwise, uses the existing simulated parallel execution.
+     *
+     * @return Context Context for sync, AsyncContext for async
      */
     protected function processParallel(Context $context): Context
     {
-        // For v0.1, we'll simulate parallel execution
-        // True async execution will be implemented in v0.3
         $agents = [];
+        $nonAgentContext = $context;
 
+        // First, process non-agent stages sequentially
         foreach ($this->stages as $stage) {
             if ($stage instanceof AgentContract || is_string($stage)) {
                 $agents[] = $stage;
             } else {
                 // Non-agent stages still execute sequentially
-                $context = $this->executeStage($stage, $context);
+                $nonAgentContext = $this->executeStage($stage, $nonAgentContext);
             }
         }
 
-        if (!empty($agents)) {
-            $context = $this->mediator->dispatchParallel($context, $agents);
+        // If no agents to process, return the context
+        if (empty($agents)) {
+            return $nonAgentContext;
         }
 
-        return $context;
+        // Choose execution path based on async mode
+        if ($this->isAsync) {
+            return $this->dispatchAsyncBatch($nonAgentContext, $agents);
+        } else {
+            // Legacy simulated parallel execution
+            return $this->mediator->dispatchParallel($nonAgentContext, $agents);
+        }
     }
 
     /**

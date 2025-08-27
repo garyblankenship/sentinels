@@ -356,4 +356,128 @@ readonly class Context
             'elapsedTime' => $this->getElapsedTime(),
         ];
     }
+
+    /**
+     * Check if this context can be safely serialized for queue processing.
+     *
+     * This method validates that the payload and metadata can be serialized
+     * and deserialized without data loss or security issues.
+     */
+    public function isSerializable(): bool
+    {
+        try {
+            // Check for known non-serializable types first
+            if ($this->payload instanceof \Closure || 
+                $this->payload instanceof \PDO ||
+                (is_object($this->payload) && method_exists($this->payload, '__sleep'))) {
+                return false;
+            }
+            
+            // Test JSON serialization of payload
+            $payloadJson = json_encode($this->payload, JSON_THROW_ON_ERROR);
+            $restoredPayload = json_decode($payloadJson, true, 512, JSON_THROW_ON_ERROR);
+            
+            // Test JSON serialization of metadata
+            $metadataJson = json_encode($this->metadata, JSON_THROW_ON_ERROR);
+            $restoredMetadata = json_decode($metadataJson, true, 512, JSON_THROW_ON_ERROR);
+            
+            return true;
+        } catch (\JsonException $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Prepare this context for queue dispatch.
+     *
+     * This method ensures the context is in a safe state for serialization
+     * and provides warnings for potential issues.
+     *
+     * @throws \InvalidArgumentException If context cannot be serialized
+     */
+    public function prepareForQueue(): self
+    {
+        if (!$this->isSerializable()) {
+            throw new \InvalidArgumentException(
+                'Context payload contains non-serializable data. ' .
+                'For async pipeline execution, payloads must be JSON-serializable. ' .
+                'Consider using IDs instead of objects, or switch to synchronous execution.'
+            );
+        }
+
+        // Add metadata to indicate this context has been prepared for queue
+        return $this->withMetadata('_prepared_for_queue', true)
+                    ->withMetadata('_queue_prepared_at', microtime(true));
+    }
+
+    /**
+     * Restore context after queue processing.
+     *
+     * This method can be extended to rehydrate relationships or 
+     * restore objects from their serialized forms.
+     */
+    public function hydrateFromQueue(): self
+    {
+        // Remove queue preparation metadata and add hydration marker
+        $metadata = $this->metadata;
+        unset($metadata['_prepared_for_queue'], $metadata['_queue_prepared_at']);
+        $metadata['_hydrated_from_queue'] = true;
+        
+        return new self(
+            payload: $this->payload,
+            metadata: $metadata,
+            correlationId: $this->correlationId,
+            tags: $this->tags,
+            traceId: $this->traceId,
+            cancelled: $this->cancelled,
+            errors: $this->errors,
+            startTime: $this->startTime,
+        );
+    }
+
+    /**
+     * Get payload serialization info for debugging.
+     *
+     * @return array Information about payload serializability
+     */
+    public function getSerializationInfo(): array
+    {
+        $info = [
+            'is_serializable' => false,
+            'payload_type' => gettype($this->payload),
+            'payload_size_bytes' => $this->getPayloadSize(),
+            'issues' => [],
+        ];
+
+        try {
+            json_encode($this->payload, JSON_THROW_ON_ERROR);
+            $info['is_serializable'] = true;
+        } catch (\JsonException $e) {
+            $info['issues'][] = 'Payload JSON serialization failed: ' . $e->getMessage();
+        }
+
+        if (is_object($this->payload)) {
+            $info['payload_class'] = get_class($this->payload);
+            
+            // Check for common problematic types
+            if ($this->payload instanceof \Closure) {
+                $info['issues'][] = 'Payload contains closure - not serializable';
+                $info['is_serializable'] = false;
+            } elseif ($this->payload instanceof \PDO) {
+                $info['issues'][] = 'Payload contains PDO connection - not serializable';
+                $info['is_serializable'] = false;
+            } elseif (method_exists($this->payload, '__sleep') || method_exists($this->payload, '__wakeup')) {
+                $info['issues'][] = 'Payload object has custom serialization methods';
+            }
+        }
+
+        // Check metadata
+        try {
+            json_encode($this->metadata, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            $info['issues'][] = 'Metadata JSON serialization failed: ' . $e->getMessage();
+        }
+
+        return $info;
+    }
 }

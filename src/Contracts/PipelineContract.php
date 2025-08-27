@@ -42,10 +42,11 @@ interface PipelineContract
      * Process the given context through the pipeline.
      *
      * This is the core method that orchestrates context flow
-     * through all pipeline stages.
+     * through all pipeline stages. Returns Context for synchronous
+     * execution or AsyncContext for asynchronous execution.
      *
      * @param Context $context The context to process
-     * @return Context The final processed context
+     * @return Context The processed context (Context or AsyncContext)
      */
     public function process(Context $context): Context;
 
