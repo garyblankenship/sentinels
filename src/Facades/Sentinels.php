@@ -3,6 +3,7 @@
 namespace Vampires\Sentinels\Facades;
 
 use Illuminate\Support\Facades\Facade;
+use Vampires\Sentinels\Agents\LaravelPipelineAgent;
 use Vampires\Sentinels\Contracts\AgentContract;
 use Vampires\Sentinels\Contracts\AgentMediator;
 use Vampires\Sentinels\Contracts\PipelineContract;
@@ -211,5 +212,30 @@ class Sentinels extends Facade
     public static function version(): string
     {
         return '0.1.0';
+    }
+
+    /**
+     * Create a Laravel Pipeline bridge agent.
+     * 
+     * This allows you to use Laravel's Pipeline within Sentinels workflows.
+     * 
+     * @param array $pipes Array of Laravel Pipeline pipes
+     * @param string $method Method to call on pipe classes
+     * @return LaravelPipelineAgent
+     */
+    public static function laravelPipeline(array $pipes = [], string $method = 'handle'): LaravelPipelineAgent
+    {
+        return new LaravelPipelineAgent($pipes, $method);
+    }
+
+    /**
+     * Create a Laravel Pipeline bridge agent with fluent syntax.
+     * 
+     * @param mixed ...$pipes Pipes to add to the Laravel Pipeline
+     * @return LaravelPipelineAgent
+     */
+    public static function throughLaravelPipes(...$pipes): LaravelPipelineAgent
+    {
+        return new LaravelPipelineAgent($pipes);
     }
 }

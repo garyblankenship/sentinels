@@ -570,6 +570,33 @@ $pipeline->branch(
 
 ## 📚 Advanced Usage
 
+### Laravel Pipeline Integration
+
+Use Laravel's Pipeline within Sentinels workflows for the best of both worlds:
+
+```php
+use Vampires\Sentinels\Facades\Sentinels;
+
+// Mix Laravel pipes with Sentinels agents
+$result = Sentinels::pipeline()
+    ->pipe(new ValidateOrderAgent())                    // Sentinels agent
+    ->pipe(Sentinels::laravelPipeline([                 // Laravel pipes
+        'uppercase_name',
+        'format_email',
+        function ($data, $next) {
+            $data['processed_at'] = now();
+            return $next($data);
+        }
+    ]))
+    ->pipe(new AuditLogAgent())                         // Back to Sentinels
+    ->through($orderData);
+
+// All Sentinels features (correlation, error handling, events) work seamlessly
+echo $result->correlationId;  // Full traceability preserved
+```
+
+**📖 [See complete Laravel Pipeline integration examples →](docs/laravel-pipeline-integration-examples.md)**
+
 ### Dynamic Routing
 
 Route contexts to different agents based on content:
@@ -715,6 +742,16 @@ php artisan sentinels:list --stats
 ```
 
 ## 🔄 When to Use Sentinels vs Alternatives
+
+### "Doesn't Laravel already do this pipeline thing?"
+
+**Great question!** Laravel does include a Pipeline class, and it's excellent for many use cases. Sentinels and Laravel Pipeline solve different problems:
+
+- **Laravel Pipeline**: Perfect for simple data transformations and middleware-style processing
+- **Sentinels Pipeline**: Designed for complex business workflows with observability and error recovery
+
+**📖 [Quick summary and decision guide →](docs/laravel-pipeline-summary.md)**  
+**📖 [Complete comparison and integration guide →](docs/laravel-pipeline-comparison.md)**
 
 ### Feature Comparison Matrix
 
@@ -944,6 +981,19 @@ Sentinels::pipeline()
 ```
 
 **Sentinels is Laravel for workflows** - bringing the same joy, productivity, and elegance to complex processing that Laravel brings to web development.
+
+## 📚 Complete Documentation
+
+- **[Getting Started](docs/getting-started.md)** - Your first Sentinels pipeline
+- **[Laravel Pipeline Summary](docs/laravel-pipeline-summary.md)** - Quick answer to "doesn't Laravel already do this?"
+- **[Laravel Pipeline Comparison](docs/laravel-pipeline-comparison.md)** - When to use Laravel Pipeline vs Sentinels
+- **[Laravel Pipeline Integration](docs/laravel-pipeline-integration-examples.md)** - Using both together
+- **[Pipelines Deep Dive](docs/pipelines.md)** - Advanced pipeline patterns
+- **[Agent Development](docs/agents.md)** - Building powerful agents
+- **[Context Management](docs/context.md)** - Working with immutable context
+- **[Error Handling](docs/error-handling.md)** - Robust error recovery
+- **[Testing Guide](docs/testing.md)** - Testing your workflows
+- **[API Reference](docs/api-reference.md)** - Complete API documentation
 
 ## 🤝 Contributing
 
