@@ -750,6 +750,7 @@ php artisan sentinels:list --stats
 - **Laravel Pipeline**: Perfect for simple data transformations and middleware-style processing
 - **Sentinels Pipeline**: Designed for complex business workflows with observability and error recovery
 
+**📖 [Quick summary and decision guide →](docs/laravel-pipeline-summary.md)**  
 **📖 [Complete comparison and integration guide →](docs/laravel-pipeline-comparison.md)**
 
 ### Feature Comparison Matrix
@@ -984,6 +985,7 @@ Sentinels::pipeline()
 ## 📚 Complete Documentation
 
 - **[Getting Started](docs/getting-started.md)** - Your first Sentinels pipeline
+- **[Laravel Pipeline Summary](docs/laravel-pipeline-summary.md)** - Quick answer to "doesn't Laravel already do this?"
 - **[Laravel Pipeline Comparison](docs/laravel-pipeline-comparison.md)** - When to use Laravel Pipeline vs Sentinels
 - **[Laravel Pipeline Integration](docs/laravel-pipeline-integration-examples.md)** - Using both together
 - **[Pipelines Deep Dive](docs/pipelines.md)** - Advanced pipeline patterns
