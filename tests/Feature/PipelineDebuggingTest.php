@@ -24,7 +24,7 @@ class PipelineDebuggingTest extends TestCase
     public function test_tap_method_executes_callback_without_modifying_context(): void
     {
         $tappedData = null;
-        
+
         $pipeline = Pipeline::create($this->mediator, $this->app['events'])
             ->pipe(new TestAgent('PROCESSED'))
             ->tap(function (Context $context) use (&$tappedData) {
@@ -87,7 +87,7 @@ class PipelineDebuggingTest extends TestCase
             ->once()
             ->with('Test log', \Mockery::on(function ($logData) {
                 // Verify that password is filtered
-                return isset($logData['metadata']['password']) 
+                return isset($logData['metadata']['password'])
                     && $logData['metadata']['password'] === '[FILTERED]'
                     && $logData['metadata']['username'] === 'testuser';
             }));
@@ -148,7 +148,7 @@ class PipelineDebuggingTest extends TestCase
     public function test_chaining_multiple_debugging_methods(): void
     {
         $tapCount = 0;
-        
+
         Log::shouldReceive('info')
             ->once()
             ->with('Chained debug', \Mockery::type('array'));
@@ -238,11 +238,14 @@ class PipelineDebuggingTest extends TestCase
 
         $pipeline = Pipeline::create($this->mediator, $this->app['events'])
             ->pipe(new TestAgent('PERFORMANCE'))
-            ->tap(function () { /* No-op */ })
+            ->tap(function () { /* No-op */
+            })
             ->dump('Performance Test')
             ->ray('Performance Ray')
             ->logContext('debug', 'Performance Log')
-            ->validate(function () { return true; })
+            ->validate(function () {
+                return true;
+            })
             ->pipe(new TestAgent('FINAL'));
 
         $result = $pipeline->through('test');

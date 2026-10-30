@@ -5,6 +5,3 @@ parameters:
         - tests
     excludePaths:
         - vendor
-    ignoreErrors:
-        - '#Property .* has no type specified#'
-        - '#Method .* has no return type specified#'

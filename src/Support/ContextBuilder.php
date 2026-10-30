@@ -288,13 +288,17 @@ class ContextBuilder
 
         if ($deadline !== null) {
             $metadata['deadline'] = $deadline instanceof \DateTimeInterface
-                ? $deadline->toISOString()
+                ? \DateTimeImmutable::createFromInterface($deadline)
+                    ->setTimezone(new \DateTimeZone('UTC'))
+                    ->format('Y-m-d\TH:i:s.u\Z')
                 : $deadline;
         }
 
         if ($initiated !== null) {
             $metadata['initiated_at'] = $initiated instanceof \DateTimeInterface
-                ? $initiated->toISOString()
+                ? \DateTimeImmutable::createFromInterface($initiated)
+                    ->setTimezone(new \DateTimeZone('UTC'))
+                    ->format('Y-m-d\TH:i:s.u\Z')
                 : $initiated;
         }
 

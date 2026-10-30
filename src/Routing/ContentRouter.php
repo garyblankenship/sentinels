@@ -8,17 +8,14 @@ use Vampires\Sentinels\Contracts\RouterContract;
 use Vampires\Sentinels\Core\Context;
 
 /**
- * Basic content-based router implementation (stub for v0.1).
- *
- * This is a minimal implementation to satisfy the contract.
- * Full routing functionality will be implemented in v0.4.
+ * Content-based routing with priority-ordered rules and an optional fallback.
  */
 class ContentRouter implements RouterContract
 {
     /**
      * Routing rules.
      *
-     * @var array<array{condition: mixed, agent: string, priority: int}>
+     * @var array<array{condition: mixed, agent: AgentContract|string, priority: int}>
      */
     protected array $routes = [];
 
@@ -54,8 +51,15 @@ class ContentRouter implements RouterContract
      */
     public function route(Context $context): ?AgentContract
     {
-        // For v0.1, this is a simple stub implementation
-        // Full routing logic will be implemented in v0.4
+        foreach ($this->routes as $route) {
+            if ($this->matches($route['condition'], $context)) {
+                $agent = $this->mediator->resolveAgent($route['agent']);
+                $name = $agent->getName();
+                $this->stats['most_used_routes'][$name] = ($this->stats['most_used_routes'][$name] ?? 0) + 1;
+
+                return $agent;
+            }
+        }
 
         if ($this->fallbackAgent) {
             $this->stats['fallback_usage']++;
@@ -73,7 +77,7 @@ class ContentRouter implements RouterContract
     {
         $this->routes[] = [
             'condition' => $condition,
-            'agent' => is_string($agent) ? $agent : get_class($agent),
+            'agent' => $agent,
             'priority' => $priority,
         ];
 
@@ -94,7 +98,11 @@ class ContentRouter implements RouterContract
         string $field = 'payload',
         int $priority = 0
     ): self {
-        return $this->addRoute($pattern, $agent, $priority);
+        return $this->addRoute(function (Context $context) use ($pattern, $field): bool {
+            $value = data_get(['payload' => $context->payload, 'metadata' => $context->metadata], $field);
+
+            return $this->matchesPattern($pattern, $value);
+        }, $agent, $priority);
     }
 
     /**
@@ -102,7 +110,11 @@ class ContentRouter implements RouterContract
      */
     public function addTypeRoute(string $type, AgentContract|string $agent, int $priority = 0): self
     {
-        return $this->addRoute($type, $agent, $priority);
+        return $this->addRoute(
+            fn (Context $context): bool => $this->matchesType($type, $context->payload),
+            $agent,
+            $priority
+        );
     }
 
     /**
@@ -118,7 +130,8 @@ class ContentRouter implements RouterContract
      */
     public function addMetadataRoute(string $key, mixed $value, AgentContract|string $agent, int $priority = 0): self
     {
-        return $this->addRoute("metadata:{$key}:{$value}", $agent, $priority);
+        return $this->addRoute(static fn (Context $context): bool => $context->hasMetadata($key)
+            && ($value === null || $context->getMetadata($key) === $value), $agent, $priority);
     }
 
     /**
@@ -148,7 +161,7 @@ class ContentRouter implements RouterContract
 
         $this->routes = array_filter($this->routes, function ($route) use ($identifier) {
             if ($identifier instanceof AgentContract) {
-                return $route['agent'] !== get_class($identifier);
+                return $route['agent'] !== $identifier && $route['agent'] !== get_class($identifier);
             }
 
             return $route['condition'] !== $identifier && $route['agent'] !== $identifier;
@@ -183,8 +196,12 @@ class ContentRouter implements RouterContract
      */
     public function getCandidates(Context $context): array
     {
-        // Stub implementation for v0.1
         $candidates = [];
+        foreach ($this->routes as $route) {
+            if ($this->matches($route['condition'], $context)) {
+                $candidates[] = $this->mediator->resolveAgent($route['agent']);
+            }
+        }
 
         if ($this->fallbackAgent) {
             $candidates[] = $this->mediator->resolveAgent($this->fallbackAgent);
@@ -198,7 +215,68 @@ class ContentRouter implements RouterContract
      */
     public function canRoute(Context $context): bool
     {
-        return !empty($this->routes) || $this->fallbackAgent !== null;
+        foreach ($this->routes as $route) {
+            if ($this->matches($route['condition'], $context)) {
+                return true;
+            }
+        }
+
+        return $this->fallbackAgent !== null;
+    }
+
+    /**
+     * Evaluate the public string shorthand or a context predicate.
+     */
+    protected function matches(string|callable $condition, Context $context): bool
+    {
+        if (is_callable($condition)) {
+            return (bool) $condition($context);
+        }
+
+        if (str_starts_with($condition, 'tag:')) {
+            return $context->hasTag(substr($condition, 4));
+        }
+
+        if (str_starts_with($condition, 'metadata:')) {
+            $parts = explode(':', substr($condition, 9), 2);
+
+            return $context->hasMetadata($parts[0])
+                && (!isset($parts[1]) || $context->getMetadata($parts[0]) === $parts[1]);
+        }
+
+        return $this->matchesType($condition, $context->payload)
+            || $this->matchesPattern($condition, $context->payload);
+    }
+
+    protected function matchesType(string $type, mixed $payload): bool
+    {
+        return match (strtolower($type)) {
+            'int', 'integer' => is_int($payload),
+            'float', 'double' => is_float($payload),
+            'bool', 'boolean' => is_bool($payload),
+            'string' => is_string($payload),
+            'array' => is_array($payload),
+            'object' => is_object($payload),
+            'null' => $payload === null,
+            'numeric' => is_numeric($payload),
+            'scalar' => is_scalar($payload),
+            'callable' => is_callable($payload),
+            'iterable' => is_iterable($payload),
+            'resource' => is_resource($payload),
+            default => is_object($payload) && is_a($payload, $type),
+        };
+    }
+
+    protected function matchesPattern(string $pattern, mixed $value): bool
+    {
+        if (!is_scalar($value) && !$value instanceof \Stringable) {
+            return false;
+        }
+
+        $value = (string) $value;
+        $match = @preg_match($pattern, $value);
+
+        return $match === false ? fnmatch($pattern, $value) : $match === 1;
     }
 
     /**

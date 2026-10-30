@@ -25,7 +25,7 @@ trait ValidatesOrder
 
         // Handle different payload structures
         $orderData = $this->extractOrderData($payload);
-        
+
         if ($orderData === null) {
             return ValidationResult::invalid(['order' => ['Invalid order data structure']]);
         }
@@ -50,7 +50,7 @@ trait ValidatesOrder
      * @param array<string, array<string>> $allowedTransitions Custom transition rules
      */
     protected function validateOrderStatusTransition(
-        string $currentStatus, 
+        string $currentStatus,
         string $newStatus,
         array $allowedTransitions = []
     ): ValidationResult {
@@ -71,8 +71,8 @@ trait ValidatesOrder
             return ValidationResult::invalid([
                 'status_transition' => [
                     "Cannot transition from '{$currentStatus}' to '{$newStatus}'. " .
-                    'Allowed transitions: ' . implode(', ', $allowedStatuses)
-                ]
+                    'Allowed transitions: ' . implode(', ', $allowedStatuses),
+                ],
             ]);
         }
 
@@ -96,11 +96,13 @@ trait ValidatesOrder
         foreach ($requiredFields as $field) {
             if (!isset($orderData[$field])) {
                 $errors[$field] = ["The {$field} field is required"];
+
                 continue;
             }
 
             if (!is_numeric($orderData[$field])) {
                 $errors[$field] = ["The {$field} must be a valid number"];
+
                 continue;
             }
 
@@ -126,12 +128,12 @@ trait ValidatesOrder
         if (abs($total - $expectedTotal) > $tolerance) {
             $errors['total'] = [
                 "Order total ({$total}) does not match calculated total ({$expectedTotal}). " .
-                "Subtotal: {$subtotal}, Tax: {$tax}, Shipping: {$shipping}, Discount: {$discount}"
+                "Subtotal: {$subtotal}, Tax: {$tax}, Shipping: {$shipping}, Discount: {$discount}",
             ];
         }
 
-        return empty($errors) 
-            ? ValidationResult::valid($orderData) 
+        return empty($errors)
+            ? ValidationResult::valid($orderData)
             : ValidationResult::invalid($errors);
     }
 
@@ -177,21 +179,23 @@ trait ValidatesOrder
             if (isset($item['line_total'], $item['quantity'], $item['price'])) {
                 $expectedLineTotal = (float) $item['quantity'] * (float) $item['price'];
                 $actualLineTotal = (float) $item['line_total'];
-                
+
                 if (abs($actualLineTotal - $expectedLineTotal) > 0.01) {
                     $itemErrors['line_total'] = [
-                        "Line total ({$actualLineTotal}) does not match quantity × price ({$expectedLineTotal})"
+                        "Line total ({$actualLineTotal}) does not match quantity × price ({$expectedLineTotal})",
                     ];
                 }
             }
 
             if (!empty($itemErrors)) {
-                $errors["item_{$index}"] = $itemErrors;
+                foreach ($itemErrors as $field => $messages) {
+                    $errors["item_{$index}.{$field}"] = $messages;
+                }
             }
         }
 
-        return empty($errors) 
-            ? ValidationResult::valid($items) 
+        return empty($errors)
+            ? ValidationResult::valid($items)
             : ValidationResult::invalid($errors);
     }
 
@@ -213,6 +217,7 @@ trait ValidatesOrder
         foreach ($prohibitedTags as $tag) {
             if ($context->hasTag($tag)) {
                 $errors['context'] = ["Order processing cannot proceed with '{$tag}' tag"];
+
                 break;
             }
         }
@@ -231,8 +236,8 @@ trait ValidatesOrder
             $errors['context'][] = 'Order processing cannot proceed with existing context errors';
         }
 
-        return empty($errors) 
-            ? ValidationResult::valid($context->payload) 
+        return empty($errors)
+            ? ValidationResult::valid($context->payload)
             : ValidationResult::invalid($errors);
     }
 

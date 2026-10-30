@@ -99,7 +99,6 @@ class SentinelMediator implements AgentMediator
             $this->fireEvent(new AgentCompleted($agentName, $context, $result, $executionTime));
 
             return $result;
-
         } catch (\Throwable $exception) {
             // Update statistics
             $executionTime = (microtime(true) - $startTime) * 1000;
@@ -196,28 +195,12 @@ class SentinelMediator implements AgentMediator
         }
 
         try {
-            // Try to resolve from container
-            if ($this->container->bound($agent)) {
-                $resolved = $this->container->make($agent);
-                if (!$resolved instanceof AgentContract) {
-                    throw new AgentResolutionException("Resolved class {$agent} does not implement AgentContract");
-                }
-
-                return $resolved;
+            $resolved = $this->container->make($agent);
+            if (!$resolved instanceof AgentContract) {
+                throw new AgentResolutionException("Resolved class {$agent} does not implement AgentContract");
             }
 
-            // Try to instantiate directly
-            if (class_exists($agent)) {
-                $resolved = new $agent();
-                if (!$resolved instanceof AgentContract) {
-                    throw new AgentResolutionException("Class {$agent} does not implement AgentContract");
-                }
-
-                return $resolved;
-            }
-
-            throw new AgentResolutionException("Cannot resolve agent: {$agent}");
-
+            return $resolved;
         } catch (\Throwable $exception) {
             throw new AgentResolutionException(
                 "Failed to resolve agent {$agent}: {$exception->getMessage()}",
@@ -449,15 +432,19 @@ class SentinelMediator implements AgentMediator
             return $middleware;
         }
 
-        if ($this->container->bound($middleware)) {
-            return $this->container->make($middleware);
-        }
+        try {
+            $resolved = $this->container->make($middleware);
+            if (!$resolved instanceof AgentMiddlewareContract) {
+                throw new AgentException("Resolved class {$middleware} does not implement AgentMiddlewareContract");
+            }
 
-        if (class_exists($middleware)) {
-            return new $middleware();
+            return $resolved;
+        } catch (\Throwable $exception) {
+            throw new AgentException(
+                "Failed to resolve middleware {$middleware}: {$exception->getMessage()}",
+                previous: $exception
+            );
         }
-
-        throw new AgentException("Cannot resolve middleware: {$middleware}");
     }
 
     /**

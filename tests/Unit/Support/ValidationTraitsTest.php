@@ -4,7 +4,6 @@ namespace Vampires\Sentinels\Tests\Unit\Support;
 
 use Vampires\Sentinels\Agents\BaseAgent;
 use Vampires\Sentinels\Core\Context;
-use Vampires\Sentinels\Core\ValidationResult;
 use Vampires\Sentinels\Support\Validation\ValidatesOrder;
 use Vampires\Sentinels\Support\Validation\ValidatesPayment;
 use Vampires\Sentinels\Support\Validation\ValidatesUser;
@@ -14,13 +13,13 @@ class ValidationTraitsTest extends TestCase
 {
     public function test_validates_order_trait(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesOrder;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validateOrder($context);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -61,7 +60,7 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_order_status_transition(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesOrder;
 
             protected function handle(Context $context): Context
@@ -70,7 +69,7 @@ class ValidationTraitsTest extends TestCase
                     $context->payload['current_status'],
                     $context->payload['new_status']
                 );
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -105,13 +104,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_order_amounts(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesOrder;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validateOrderAmounts($context->payload);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -150,13 +149,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_payment_trait(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesPayment;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validatePayment($context);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -196,13 +195,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_payment_amount(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesPayment;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validatePaymentAmount($context->payload);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -237,13 +236,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_card_data(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesPayment;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validateCardData($context->payload);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -282,13 +281,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_user_trait(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesUser;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validateUser($context);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -324,13 +323,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_user_registration(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesUser;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validateUserRegistration($context);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -373,13 +372,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_user_permissions(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesUser;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validateUserPermissions($context, ['edit_orders'], ['admin']);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }
@@ -412,13 +411,13 @@ class ValidationTraitsTest extends TestCase
 
     public function test_validates_password_strength(): void
     {
-        $agent = new class extends BaseAgent {
+        $agent = new class () extends BaseAgent {
             use ValidatesUser;
 
             protected function handle(Context $context): Context
             {
                 $validation = $this->validatePasswordStrength($context->payload['password']);
-                
+
                 if (!$validation->valid) {
                     return $context->addErrors($validation->getAllErrors());
                 }

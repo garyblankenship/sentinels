@@ -47,7 +47,7 @@ trait ValidatesUser
         array $passwordRules = []
     ): ValidationResult {
         $userData = $this->extractUserData($context->payload);
-        
+
         if ($userData === null) {
             return ValidationResult::invalid(['user' => ['Invalid registration data']]);
         }
@@ -87,7 +87,7 @@ trait ValidatesUser
         bool $requireCurrentPassword = true
     ): ValidationResult {
         $userData = $this->extractUserData($context->payload);
-        
+
         if ($userData === null) {
             return ValidationResult::invalid(['user' => ['Invalid profile data']]);
         }
@@ -157,7 +157,7 @@ trait ValidatesUser
             $errors['account'] = ["Account is {$accountStatus}"];
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($context->payload)
             : ValidationResult::invalid($errors);
     }
@@ -173,7 +173,7 @@ trait ValidatesUser
         array $allowedMethods = ['password', 'oauth', 'api_token']
     ): ValidationResult {
         $userData = $this->extractUserData($context->payload);
-        
+
         if ($userData === null) {
             return ValidationResult::invalid(['auth' => ['Invalid authentication data']]);
         }
@@ -185,7 +185,7 @@ trait ValidatesUser
         if (!in_array($authMethod, $allowedMethods, true)) {
             $errors['auth_method'] = [
                 "Authentication method '{$authMethod}' not allowed. " .
-                'Allowed methods: ' . implode(', ', $allowedMethods)
+                'Allowed methods: ' . implode(', ', $allowedMethods),
             ];
         }
 
@@ -195,18 +195,21 @@ trait ValidatesUser
                 if (empty($userData['email']) || empty($userData['password'])) {
                     $errors['credentials'] = ['Email and password are required'];
                 }
+
                 break;
 
             case 'oauth':
                 if (empty($userData['oauth_provider']) || empty($userData['oauth_token'])) {
                     $errors['oauth'] = ['OAuth provider and token are required'];
                 }
+
                 break;
 
             case 'api_token':
                 if (empty($userData['api_token'])) {
                     $errors['api_token'] = ['API token is required'];
                 }
+
                 break;
         }
 
@@ -216,7 +219,7 @@ trait ValidatesUser
             $errors = array_merge($errors, $securityValidation->errors);
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($userData)
             : ValidationResult::invalid($errors);
     }
@@ -252,13 +255,13 @@ trait ValidatesUser
         if (isset($userData['postal_code'], $userData['country'])) {
             $postalCode = $userData['postal_code'];
             $country = $userData['country'];
-            
+
             if (!$this->isValidPostalCode($postalCode, $country)) {
                 $errors['postal_code'] = ['Invalid postal code for selected country'];
             }
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($userData)
             : ValidationResult::invalid($errors);
     }
@@ -322,7 +325,7 @@ trait ValidatesUser
             $errors['password'][] = 'Password is too common or weak';
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid(['password' => $password])
             : ValidationResult::invalid($errors);
     }
@@ -341,11 +344,12 @@ trait ValidatesUser
         foreach ($suspiciousFields as $field) {
             if (isset($userData[$field]) && $this->containsSuspiciousContent($userData[$field])) {
                 $errors['security'] = ['Suspicious content detected'];
+
                 break;
             }
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($userData)
             : ValidationResult::invalid($errors);
     }
@@ -371,7 +375,7 @@ trait ValidatesUser
             $errors['security'] = ['Authentication from suspicious location'];
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($context->payload)
             : ValidationResult::invalid($errors);
     }
@@ -392,6 +396,7 @@ trait ValidatesUser
             if (method_exists($payload, 'toArray')) {
                 return $payload->toArray();
             }
+
             return json_decode(json_encode($payload), true);
         }
 
@@ -407,11 +412,11 @@ trait ValidatesUser
     {
         $disposableDomains = [
             '10minutemail.com', 'guerrillamail.com', 'mailinator.com',
-            'tempmail.org', 'yopmail.com', 'throwaway.email'
+            'tempmail.org', 'yopmail.com', 'throwaway.email',
         ];
 
         $domain = strtolower(substr(strrchr($email, '@'), 1));
-        
+
         return in_array($domain, $disposableDomains, true);
     }
 
@@ -424,7 +429,7 @@ trait ValidatesUser
     {
         // Remove all non-digit characters
         $cleaned = preg_replace('/\D/', '', $phone);
-        
+
         // Basic validation: 7-15 digits (international standard)
         return strlen($cleaned) >= 7 && strlen($cleaned) <= 15;
     }
@@ -446,7 +451,7 @@ trait ValidatesUser
         ];
 
         $pattern = $patterns[strtoupper($country)] ?? '/^.{3,10}$/'; // Generic fallback
-        
+
         return preg_match($pattern, $postalCode) === 1;
     }
 
@@ -459,7 +464,7 @@ trait ValidatesUser
     {
         $commonPasswords = [
             'password', '123456', 'qwerty', 'abc123', 'password123',
-            'admin', 'letmein', 'welcome', 'monkey', '1234567890'
+            'admin', 'letmein', 'welcome', 'monkey', '1234567890',
         ];
 
         return in_array(strtolower($password), $commonPasswords, true);

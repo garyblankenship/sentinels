@@ -21,7 +21,11 @@ use Vampires\Sentinels\Exceptions\AgentException;
  */
 class AgentExecutionJob implements ShouldQueue
 {
-    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable;
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
     /**
      * The number of times the job may be attempted.
@@ -64,7 +68,6 @@ class AgentExecutionJob implements ShouldQueue
 
             // Cache the result for batch aggregation
             $this->cacheResult($resultContext);
-
         } catch (\Throwable $exception) {
             // Re-throw to trigger batch failure handling
             // Error will be cached automatically in failed() method
@@ -125,6 +128,4 @@ class AgentExecutionJob implements ShouldQueue
 
         Cache::put($key, $errorData, $ttl);
     }
-
-
 }

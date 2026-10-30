@@ -3,9 +3,7 @@
 namespace Vampires\Sentinels\Tests\Unit\Support;
 
 use Illuminate\Foundation\Auth\User;
-use Illuminate\Http\Request;
 use PHPUnit\Framework\TestCase;
-use Vampires\Sentinels\Core\Context;
 use Vampires\Sentinels\Support\ContextBuilder;
 
 class ContextBuilderTest extends TestCase
@@ -16,7 +14,7 @@ class ContextBuilderTest extends TestCase
         $context = $builder->build();
 
         $this->assertEquals('test payload', $context->payload);
-        $this->assertIsString($context->correlationId);
+        $this->assertNotEmpty($context->correlationId);
     }
 
     public function test_can_add_single_metadata(): void
@@ -99,7 +97,7 @@ class ContextBuilderTest extends TestCase
 
     public function test_can_add_user_information(): void
     {
-        $user = new class extends User {
+        $user = new class () extends User {
             public $id = 123;
             public $email = 'test@example.com';
             public $name = 'Test User';
@@ -144,6 +142,20 @@ class ContextBuilderTest extends TestCase
 
         $this->assertEquals($deadline, $context->getMetadata('deadline'));
         $this->assertEquals($initiated, $context->getMetadata('initiated_at'));
+    }
+
+    public function test_timing_accepts_native_dates_and_normalizes_to_utc_without_mutation(): void
+    {
+        $deadline = new \DateTime('2026-10-30 12:34:56.123456', new \DateTimeZone('America/New_York'));
+        $initiated = new \DateTimeImmutable('2026-10-30 17:00:00.654321', new \DateTimeZone('Europe/Paris'));
+        $originalDeadline = clone $deadline;
+
+        $context = ContextBuilder::for('test')->withTiming($deadline, $initiated)->build();
+
+        $this->assertSame('2026-10-30T16:34:56.123456Z', $context->getMetadata('deadline'));
+        $this->assertSame('2026-10-30T16:00:00.654321Z', $context->getMetadata('initiated_at'));
+        $this->assertEquals($originalDeadline, $deadline);
+        $this->assertSame('America/New_York', $deadline->getTimezone()->getName());
     }
 
     public function test_can_set_trace_id(): void
@@ -220,7 +232,7 @@ class ContextBuilderTest extends TestCase
 
         $tags = $context->tags;
         $duplicateCount = array_count_values($tags)['duplicate'] ?? 0;
-        
+
         $this->assertEquals(1, $duplicateCount, 'Duplicate tags should only appear once');
         $this->assertTrue($context->hasTag('unique'));
     }

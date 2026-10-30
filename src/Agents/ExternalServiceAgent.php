@@ -5,7 +5,6 @@ namespace Vampires\Sentinels\Agents;
 use Exception;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 use Vampires\Sentinels\Core\Context;
 use Vampires\Sentinels\Core\RetryPolicy;
@@ -61,7 +60,7 @@ abstract class ExternalServiceAgent extends BaseAgent
 
     /**
      * Whether to preserve the original payload when adding service results.
-     * 
+     *
      * When true, service results are added as a sub-array to the original payload.
      * When false, service response replaces the entire payload (legacy behavior).
      */
@@ -75,7 +74,7 @@ abstract class ExternalServiceAgent extends BaseAgent
                 'service' => $this->getServiceName(),
                 'correlation_id' => $context->correlationId,
             ]);
-            
+
             return $this->handleFallback($context);
         }
 
@@ -85,7 +84,7 @@ abstract class ExternalServiceAgent extends BaseAgent
                 'service' => $this->getServiceName(),
                 'correlation_id' => $context->correlationId,
             ]);
-            
+
             return $this->handleFallback($context);
         }
 
@@ -98,12 +97,12 @@ abstract class ExternalServiceAgent extends BaseAgent
                     'service' => $this->getServiceName(),
                     'cache_key' => $cacheKey,
                 ]);
-                
+
                 if ($this->preservePayload) {
                     // Preserve original payload and add cached response
                     $preservedPayload = $context->payload;
                     $resultKey = $this->getResultKey();
-                    
+
                     if (is_array($preservedPayload)) {
                         $preservedPayload[$resultKey] = $cached;
                         $newPayload = $preservedPayload;
@@ -116,7 +115,7 @@ abstract class ExternalServiceAgent extends BaseAgent
                 } else {
                     $newPayload = $cached;
                 }
-                
+
                 return $context->with($newPayload)->withMetadata('cached', true);
             }
         }
@@ -124,27 +123,27 @@ abstract class ExternalServiceAgent extends BaseAgent
         try {
             // Call the external service
             $response = $this->callService($context->payload, $context);
-            
+
             // Record success for circuit breaker
             $this->recordSuccess();
-            
+
             // Cache the response
             if ($this->isCacheEnabled() && $cacheKey && $this->shouldCacheResponse($response)) {
                 Cache::put($cacheKey, $response, $this->cacheConfig['ttl']);
             }
-            
+
             $this->log('info', 'External service call successful', [
                 'service' => $this->getServiceName(),
                 'correlation_id' => $context->correlationId,
             ]);
 
             $serviceName = $this->getServiceName();
-            
+
             if ($this->preservePayload) {
                 // Preserve original payload and add service response
                 $preservedPayload = $context->payload;
                 $resultKey = $this->getResultKey();
-                
+
                 // If payload is array, merge service response
                 if (is_array($preservedPayload)) {
                     $preservedPayload[$resultKey] = $response;
@@ -165,11 +164,10 @@ abstract class ExternalServiceAgent extends BaseAgent
                 ->with($newPayload)
                 ->withMetadata('external_service_success', true)
                 ->withMetadata('service_name', $serviceName);
-
         } catch (Throwable $exception) {
             // Record failure for circuit breaker
             $this->recordFailure();
-            
+
             $this->log('error', 'External service call failed', [
                 'service' => $this->getServiceName(),
                 'error' => $exception->getMessage(),
@@ -201,7 +199,7 @@ abstract class ExternalServiceAgent extends BaseAgent
 
     /**
      * Get the key name for storing service results in the payload.
-     * 
+     *
      * Override this method to customize how results are stored.
      * By default, it uses the service name with '_results' suffix.
      */
@@ -222,13 +220,13 @@ abstract class ExternalServiceAgent extends BaseAgent
     protected function handleFallback(Context $context, ?Throwable $exception = null): Context
     {
         $fallbackResponse = $this->getFallbackResponse($context->payload, $context);
-        
+
         if ($fallbackResponse !== null) {
             if ($this->preservePayload) {
                 // Preserve original payload and add fallback response
                 $preservedPayload = $context->payload;
                 $resultKey = $this->getResultKey();
-                
+
                 if (is_array($preservedPayload)) {
                     $preservedPayload[$resultKey] = $fallbackResponse;
                     $newPayload = $preservedPayload;
@@ -241,7 +239,7 @@ abstract class ExternalServiceAgent extends BaseAgent
             } else {
                 $newPayload = $fallbackResponse;
             }
-            
+
             return $context
                 ->with($newPayload)
                 ->withMetadata('fallback_used', true)
@@ -249,7 +247,7 @@ abstract class ExternalServiceAgent extends BaseAgent
         }
 
         $errorMessage = $exception?->getMessage() ?? 'External service unavailable';
-        
+
         return $context
             ->addError("External service '{$this->getServiceName()}' failed: {$errorMessage}")
             ->withMetadata('external_service_failed', true)
@@ -374,9 +372,9 @@ abstract class ExternalServiceAgent extends BaseAgent
             if ($state['last_failure'] === null) {
                 return false; // No last failure time, circuit should not be open
             }
-            
+
             $recoveryTime = $state['last_failure'] + $this->circuitBreaker['recovery_timeout'];
-            
+
             return time() < $recoveryTime;
         }
 
@@ -394,7 +392,7 @@ abstract class ExternalServiceAgent extends BaseAgent
 
         $cacheKey = $this->getCircuitBreakerKey();
         $state = Cache::get($cacheKey, ['failures' => 0, 'successes' => 0]);
-        
+
         $state['successes'] = ($state['successes'] ?? 0) + 1;
 
         // Reset failures if we've had enough successes
@@ -418,7 +416,7 @@ abstract class ExternalServiceAgent extends BaseAgent
 
         $cacheKey = $this->getCircuitBreakerKey();
         $state = Cache::get($cacheKey, ['failures' => 0, 'successes' => 0]);
-        
+
         $state['failures'] = ($state['failures'] ?? 0) + 1;
         $state['successes'] = 0; // Reset success counter
         $state['last_failure'] = time();
@@ -505,7 +503,7 @@ abstract class ExternalServiceAgent extends BaseAgent
     {
         $identifier = $context->getMetadata('user_id', 'anonymous');
         $minute = floor(time() / 60);
-        
+
         return "rate_limit:{$this->getServiceName()}:{$identifier}:{$minute}";
     }
 
@@ -527,7 +525,7 @@ abstract class ExternalServiceAgent extends BaseAgent
 
     /**
      * Create a secure hash of the payload for cache key generation.
-     * 
+     *
      * Uses JSON encoding with SHA-256 hash instead of unsafe serialize() + MD5.
      * Handles circular references gracefully.
      */
@@ -540,10 +538,10 @@ abstract class ExternalServiceAgent extends BaseAgent
             // If JSON encoding fails (e.g., circular references), create a fallback representation
             $jsonPayload = $this->createSafePayloadRepresentation($payload);
         }
-        
+
         return hash('sha256', $jsonPayload);
     }
-    
+
     /**
      * Create a safe string representation of payload that handles circular references.
      */
@@ -552,7 +550,7 @@ abstract class ExternalServiceAgent extends BaseAgent
         if (is_object($payload)) {
             return sprintf('object(%s)', get_class($payload));
         }
-        
+
         if (is_array($payload)) {
             $safeArray = [];
             foreach ($payload as $key => $value) {
@@ -565,9 +563,10 @@ abstract class ExternalServiceAgent extends BaseAgent
                     $safeArray[$key] = $value;
                 }
             }
+
             return json_encode($safeArray, JSON_THROW_ON_ERROR);
         }
-        
+
         return json_encode($payload, JSON_THROW_ON_ERROR);
     }
 
@@ -592,7 +591,7 @@ abstract class ExternalServiceAgent extends BaseAgent
         // Base timeout plus potential retry delays
         $baseTime = $this->httpConfig['timeout'] * 1000; // Convert to milliseconds
         $retryTime = $this->httpConfig['retry_attempts'] * $this->httpConfig['retry_delay'];
-        
+
         return $baseTime + $retryTime;
     }
 

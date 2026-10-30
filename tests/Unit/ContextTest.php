@@ -9,11 +9,13 @@ class ContextTest extends TestCase
 {
     public function test_context_can_be_created_with_payload(): void
     {
+        $before = microtime(true);
         $context = new Context('test payload');
 
         $this->assertEquals('test payload', $context->payload);
-        $this->assertIsString($context->correlationId);
-        $this->assertIsFloat($context->startTime);
+        $this->assertNotEmpty($context->correlationId);
+        $this->assertGreaterThanOrEqual($before, $context->startTime);
+        $this->assertLessThanOrEqual(microtime(true), $context->startTime);
         $this->assertFalse($context->cancelled);
         $this->assertEmpty($context->errors);
         $this->assertEmpty($context->metadata);
@@ -155,7 +157,6 @@ class ContextTest extends TestCase
 
         $array = $context->toArray();
 
-        $this->assertIsArray($array);
         $this->assertEquals('test', $array['payload']);
         $this->assertEquals(['key' => 'value'], $array['metadata']);
         $this->assertEquals(['important'], $array['tags']);
@@ -170,8 +171,8 @@ class ContextTest extends TestCase
         $context2 = new Context('test2');
 
         $this->assertNotEquals($context1->correlationId, $context2->correlationId);
-        $this->assertIsString($context1->correlationId);
-        $this->assertIsString($context2->correlationId);
+        $this->assertNotEmpty($context1->correlationId);
+        $this->assertNotEmpty($context2->correlationId);
     }
 
     public function test_context_payload_size_estimation(): void

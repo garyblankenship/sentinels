@@ -266,7 +266,7 @@ readonly class Context
 
     /**
      * Get the size of the payload in bytes (approximation).
-     * 
+     *
      * Uses JSON encoding instead of unsafe serialize() for size calculation.
      */
     public function getPayloadSize(): int
@@ -274,13 +274,14 @@ readonly class Context
         try {
             // Try JSON encoding first
             $encoded = json_encode($this->payload, JSON_THROW_ON_ERROR);
+
             return strlen($encoded);
         } catch (\JsonException $e) {
             // Fallback to safe size estimation for non-JSON-serializable data
             return $this->estimatePayloadSize($this->payload);
         }
     }
-    
+
     /**
      * Estimate payload size for complex data structures that can't be JSON encoded.
      */
@@ -289,33 +290,34 @@ readonly class Context
         if ($payload === null) {
             return 4; // "null"
         }
-        
+
         if (is_bool($payload)) {
             return $payload ? 4 : 5; // "true" or "false"
         }
-        
+
         if (is_numeric($payload)) {
             return strlen((string) $payload);
         }
-        
+
         if (is_string($payload)) {
             return strlen($payload);
         }
-        
+
         if (is_array($payload)) {
             $size = 2; // []
             foreach ($payload as $key => $value) {
                 $size += strlen((string) $key) + 3; // key + "":
                 $size += $this->estimatePayloadSize($value) + 1; // value + ,
             }
+
             return $size;
         }
-        
+
         if (is_object($payload)) {
             // For objects, return a reasonable estimate based on class name
             return strlen(get_class($payload)) + 20; // class name + some overhead
         }
-        
+
         return 50; // fallback for unknown types
     }
 
@@ -367,20 +369,22 @@ readonly class Context
     {
         try {
             // Check for known non-serializable types first
-            if ($this->payload instanceof \Closure || 
+            if (
+                $this->payload instanceof \Closure ||
                 $this->payload instanceof \PDO ||
-                (is_object($this->payload) && method_exists($this->payload, '__sleep'))) {
+                (is_object($this->payload) && method_exists($this->payload, '__sleep'))
+            ) {
                 return false;
             }
-            
+
             // Test JSON serialization of payload
             $payloadJson = json_encode($this->payload, JSON_THROW_ON_ERROR);
             $restoredPayload = json_decode($payloadJson, true, 512, JSON_THROW_ON_ERROR);
-            
+
             // Test JSON serialization of metadata
             $metadataJson = json_encode($this->metadata, JSON_THROW_ON_ERROR);
             $restoredMetadata = json_decode($metadataJson, true, 512, JSON_THROW_ON_ERROR);
-            
+
             return true;
         } catch (\JsonException $e) {
             return false;
@@ -413,7 +417,7 @@ readonly class Context
     /**
      * Restore context after queue processing.
      *
-     * This method can be extended to rehydrate relationships or 
+     * This method can be extended to rehydrate relationships or
      * restore objects from their serialized forms.
      */
     public function hydrateFromQueue(): self
@@ -422,7 +426,7 @@ readonly class Context
         $metadata = $this->metadata;
         unset($metadata['_prepared_for_queue'], $metadata['_queue_prepared_at']);
         $metadata['_hydrated_from_queue'] = true;
-        
+
         return new self(
             payload: $this->payload,
             metadata: $metadata,
@@ -458,7 +462,7 @@ readonly class Context
 
         if (is_object($this->payload)) {
             $info['payload_class'] = get_class($this->payload);
-            
+
             // Check for common problematic types
             if ($this->payload instanceof \Closure) {
                 $info['issues'][] = 'Payload contains closure - not serializable';

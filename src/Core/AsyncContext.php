@@ -7,13 +7,8 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Asynchronous Context that transparently handles batch execution.
- * 
- * This class extends Context to provide async execution while maintaining
- * the same API. When properties are accessed, it automatically waits for
- * batch completion and returns the aggregated results.
- * 
- * Developers use it exactly like Context - the async behavior is transparent.
+ * Handle for a queued pipeline. Call result() or wait() to obtain its final Context.
+ * Inherited public properties describe the original submission and do not block.
  */
 readonly class AsyncContext extends Context
 {
@@ -71,55 +66,43 @@ readonly class AsyncContext extends Context
     }
 
     /**
-     * Override payload access to trigger auto-wait.
+     * Resolve the queued result. Inherited public properties cannot be intercepted.
      */
-    public function __get(string $name): mixed
+    public function result(int $timeout = 300): Context
     {
-        $resolved = $this->getResolvedContext();
-        return $resolved->{$name} ?? parent::__get($name);
+        return $this->wait($timeout);
     }
 
-    /**
-     * Get resolved context (auto-waits if needed).
-     */
     protected function getResolvedContext(): Context
     {
-        if (!$this->batch) {
-            return $this;
-        }
-
-        // Check if batch is ready
-        $currentBatch = Bus::findBatch($this->batch->id);
-        if (!$currentBatch || !$currentBatch->finished()) {
-            // Auto-wait for completion
-            $this->waitForCompletion();
-        }
-
-        // Get final result from cache
-        $cacheKey = "sentinels:batch:{$this->batch->id}:final";
-        $resolved = Cache::get($cacheKey);
-        return $resolved ?: $this->addError('Async pipeline failed to produce results');
+        return $this->wait();
     }
 
-    /**
-     * Wait for batch completion.
-     */
     protected function waitForCompletion(int $timeout = 300): void
     {
         if (!$this->batch) {
             return;
         }
 
-        $startTime = time();
-        while ($this->batch && (time() - $startTime) < $timeout) {
-            $this->batch = Bus::findBatch($this->batch->id);
-            if ($this->batch && $this->batch->finished()) {
+        $deadline = microtime(true) + max(0, $timeout);
+        do {
+            if (Cache::get("sentinels:batch:{$this->batch->id}:final") instanceof Context) {
                 return;
             }
-            sleep(1);
-        }
 
-        throw new \RuntimeException("Async pipeline timed out after {$timeout} seconds");
+            $currentBatch = Bus::findBatch($this->batch->id);
+            if (!$currentBatch) {
+                throw new \RuntimeException('Async pipeline batch is no longer available');
+            }
+
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+
+            usleep(100000);
+        } while (true);
+
+        throw new \RuntimeException("Async pipeline result unavailable after {$timeout} seconds");
     }
 
     /**
@@ -131,9 +114,8 @@ readonly class AsyncContext extends Context
             return true; // No batch means we're already sync
         }
 
-        // Refresh batch status
-        $currentBatch = Bus::findBatch($this->batch->id);
-        return $currentBatch ? $currentBatch->finished() : false;
+        // A finished batch is ready only after its callback has stored the final result.
+        return Cache::get("sentinels:batch:{$this->batch->id}:final") instanceof Context;
     }
 
     /**
@@ -147,12 +129,13 @@ readonly class AsyncContext extends Context
 
         // Refresh batch status
         $currentBatch = Bus::findBatch($this->batch->id);
-        return $currentBatch ? $currentBatch->progress() : 100;
+
+        return $currentBatch ? $currentBatch->progress() : 0;
     }
 
     /**
      * Explicitly wait for async execution to complete.
-     * 
+     *
      * @param int $timeout Maximum time to wait in seconds
      * @return Context The resolved context
      */
@@ -163,7 +146,12 @@ readonly class AsyncContext extends Context
         }
 
         $this->waitForCompletion($timeout);
-        return $this->getResolvedContext();
+        $resolved = Cache::get("sentinels:batch:{$this->batch->id}:final");
+        if (!$resolved instanceof Context) {
+            throw new \RuntimeException('Async pipeline failed to produce results');
+        }
+
+        return $resolved;
     }
 
     /**
@@ -183,18 +171,23 @@ readonly class AsyncContext extends Context
             return null;
         }
 
+        $currentBatch = Bus::findBatch($this->batch->id);
+        if (!$currentBatch) {
+            return null;
+        }
+
         return [
-            'id' => $this->batch->id,
-            'name' => $this->batch->name,
-            'total_jobs' => $this->batch->totalJobs,
-            'pending_jobs' => $this->batch->pendingJobs,
-            'processed_jobs' => $this->batch->processedJobs(),
-            'failed_jobs' => $this->batch->failedJobs,
-            'progress' => $this->batch->progress(),
-            'finished' => $this->batch->finished(),
-            'cancelled' => $this->batch->cancelled(),
-            'created_at' => $this->batch->createdAt,
-            'finished_at' => $this->batch->finishedAt,
+            'id' => $currentBatch->id,
+            'name' => $currentBatch->name,
+            'total_jobs' => $currentBatch->totalJobs,
+            'pending_jobs' => $currentBatch->pendingJobs,
+            'processed_jobs' => $currentBatch->processedJobs(),
+            'failed_jobs' => $currentBatch->failedJobs,
+            'progress' => $currentBatch->progress(),
+            'finished' => $currentBatch->finished(),
+            'cancelled' => $currentBatch->cancelled(),
+            'created_at' => $currentBatch->createdAt,
+            'finished_at' => $currentBatch->finishedAt,
         ];
     }
 
@@ -203,16 +196,8 @@ readonly class AsyncContext extends Context
      */
     public function with(mixed $payload): Context
     {
-        // If we have a batch and it's not ready, wait for it
-        if ($this->batch && !$this->isReady()) {
-            $resolved = $this->getResolvedContext();
-            return $resolved->with($payload);
-        }
-
-        return parent::with($payload);
+        return $this->batch ? $this->wait()->with($payload) : parent::with($payload);
     }
-
-    // Removed ensureResolved() - using getResolvedContext() instead
 
     /**
      * Check if this is an async context.
@@ -223,25 +208,15 @@ readonly class AsyncContext extends Context
     }
 
     /**
-     * Proxy method calls to resolved context for transparent API.
+     * Resolve dynamic metadata access. Public Context properties remain submission data.
      */
-    public function __call(string $method, array $arguments): mixed
+    public function __get(string $name): mixed
     {
-        $resolved = $this->getResolvedContext();
-        
-        if (!method_exists($resolved, $method)) {
-            throw new \BadMethodCallException("Method {$method} does not exist on Context");
-        }
-        
-        return $resolved->{$method}(...$arguments);
+        return $this->batch ? $this->wait()->getMetadata($name) : $this->getMetadata($name);
     }
 
-    /**
-     * Magic method to handle property access.
-     */
     public function __isset(string $name): bool
     {
-        $resolved = $this->getResolvedContext();
-        return isset($resolved->{$name});
+        return $this->batch ? $this->wait()->getMetadata($name) !== null : isset($this->metadata[$name]);
     }
 }

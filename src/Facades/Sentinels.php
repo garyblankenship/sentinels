@@ -165,7 +165,7 @@ class Sentinels extends Facade
      *
      * This is useful for quick prototyping and testing.
      */
-    public static function agent(callable $handler, string $name = null): AgentContract
+    public static function agent(callable $handler, ?string $name = null): AgentContract
     {
         return new class ($handler, $name) extends \Vampires\Sentinels\Agents\BaseAgent {
             public function __construct(

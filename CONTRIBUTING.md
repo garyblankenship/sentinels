@@ -5,9 +5,9 @@ Thank you for considering contributing to the Sentinels Laravel package! We welc
 ## Development Setup
 
 ### Requirements
-- PHP 8.1 or higher
+- PHP 8.2 or higher (Laravel 13 requires PHP 8.3+)
 - Composer
-- Laravel 11.x
+- A supported Laravel version (9–13)
 
 ### Installation
 
@@ -45,7 +45,7 @@ vendor/bin/phpunit --testsuite=Feature
 
 ### PHPStan (Static Analysis)
 ```bash
-vendor/bin/phpstan analyse
+composer analyse
 ```
 
 ### PHP CS Fixer (Code Style)
@@ -76,7 +76,7 @@ vendor/bin/phpcs --standard=PSR12 src/
 ## Coding Standards
 
 - Follow PSR-12 coding standards
-- Use PHP 8.1+ features where appropriate
+- Use PHP 8.2+ features where appropriate
 - Keep methods focused and under 20 lines when possible
 - Write descriptive PHPDoc comments
 - Use type declarations for all parameters and return types

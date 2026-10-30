@@ -155,7 +155,10 @@ interface PipelineContract
      *     stage_count: int,
      *     estimated_time: int,
      *     has_branches: bool,
-     *     middleware_count: int
+     *     middleware_count: int,
+     *     mode: string,
+     *     timeout: int,
+     *     execution_stats: array<string, mixed>
      * }
      */
     public function getStats(): array;

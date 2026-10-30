@@ -54,11 +54,13 @@ trait ValidatesPayment
 
         if (!isset($paymentData['amount']) || !is_numeric($paymentData['amount'])) {
             $errors['amount'] = ['Payment amount must be a valid number'];
+
             return ValidationResult::invalid($errors);
         }
 
         if (!isset($paymentData['currency'])) {
             $errors['currency'] = ['Payment currency is required'];
+
             return ValidationResult::invalid($errors);
         }
 
@@ -69,7 +71,7 @@ trait ValidatesPayment
         if (!in_array($currency, $allowedCurrencies, true)) {
             $errors['currency'] = [
                 "Currency '{$currency}' is not supported. " .
-                'Allowed currencies: ' . implode(', ', $allowedCurrencies)
+                'Allowed currencies: ' . implode(', ', $allowedCurrencies),
             ];
         }
 
@@ -81,11 +83,11 @@ trait ValidatesPayment
         // Check currency-specific limits
         if (isset($currencyLimits[$currency])) {
             $limits = $currencyLimits[$currency];
-            
+
             if (isset($limits['min']) && $amount < $limits['min']) {
                 $errors['amount'] = ["Minimum payment amount for {$currency} is {$limits['min']}"];
             }
-            
+
             if (isset($limits['max']) && $amount > $limits['max']) {
                 $errors['amount'] = ["Maximum payment amount for {$currency} is {$limits['max']}"];
             }
@@ -98,12 +100,12 @@ trait ValidatesPayment
             $actualDecimals = strlen(substr($amountStr, strpos($amountStr, '.') + 1));
             if ($actualDecimals > $decimalPlaces) {
                 $errors['amount'] = [
-                    "Currency {$currency} supports maximum {$decimalPlaces} decimal places"
+                    "Currency {$currency} supports maximum {$decimalPlaces} decimal places",
                 ];
             }
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($paymentData)
             : ValidationResult::invalid($errors);
     }
@@ -120,7 +122,7 @@ trait ValidatesPayment
     ): ValidationResult {
         if (!isset($paymentData['payment_method'])) {
             return ValidationResult::invalid([
-                'payment_method' => ['Payment method is required']
+                'payment_method' => ['Payment method is required'],
             ]);
         }
 
@@ -155,6 +157,7 @@ trait ValidatesPayment
                 if (!$cardValidation->valid) {
                     $errors = array_merge($errors, $cardValidation->errors);
                 }
+
                 break;
 
             case 'bank_transfer':
@@ -162,10 +165,11 @@ trait ValidatesPayment
                 if (!$bankValidation->valid) {
                     $errors = array_merge($errors, $bankValidation->errors);
                 }
+
                 break;
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($paymentData)
             : ValidationResult::invalid($errors);
     }
@@ -191,7 +195,7 @@ trait ValidatesPayment
         if (isset($paymentData['expiry_month'], $paymentData['expiry_year'])) {
             $month = (int) $paymentData['expiry_month'];
             $year = (int) $paymentData['expiry_year'];
-            
+
             if ($month < 1 || $month > 12) {
                 $errors['expiry_month'] = ['Expiry month must be between 1 and 12'];
             }
@@ -217,7 +221,7 @@ trait ValidatesPayment
             }
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($paymentData)
             : ValidationResult::invalid($errors);
     }
@@ -249,7 +253,7 @@ trait ValidatesPayment
             }
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($paymentData)
             : ValidationResult::invalid($errors);
     }
@@ -286,7 +290,7 @@ trait ValidatesPayment
             $errors['authentication'] = ['Payment requires user authentication'];
         }
 
-        return empty($errors) 
+        return empty($errors)
             ? ValidationResult::valid($context->payload)
             : ValidationResult::invalid($errors);
     }
@@ -307,6 +311,7 @@ trait ValidatesPayment
             if (method_exists($payload, 'toArray')) {
                 return $payload->toArray();
             }
+
             return json_decode(json_encode($payload), true);
         }
 
@@ -408,11 +413,20 @@ trait ValidatesPayment
      */
     private function ipInRange(string $ip, string $range): bool
     {
-        [$range, $netmask] = explode('/', $range, 2);
-        $rangeDecimal = ip2long($range);
+        $parts = explode('/', $range, 2);
+        if (count($parts) !== 2 || !ctype_digit($parts[1])) {
+            return false;
+        }
+
+        [$network, $prefix] = $parts;
+        $prefixLength = (int) $prefix;
+        $rangeDecimal = ip2long($network);
         $ipDecimal = ip2long($ip);
-        $wildcardDecimal = pow(2, (32 - $netmask)) - 1;
-        $netmaskDecimal = ~$wildcardDecimal;
+        if ($prefixLength > 32 || $rangeDecimal === false || $ipDecimal === false) {
+            return false;
+        }
+
+        $netmaskDecimal = $prefixLength === 0 ? 0 : (-1 << (32 - $prefixLength));
 
         return ($ipDecimal & $netmaskDecimal) === ($rangeDecimal & $netmaskDecimal);
     }

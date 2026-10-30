@@ -4,6 +4,32 @@ All notable changes to `sentinels` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
+### Changed
+- Added Laravel 12 and 13 support, including development dependencies for Testbench 10 and 11.
+- Corrected the PHP minimum to 8.2 to match the existing readonly classes; PHP 8.5 is supported.
+- Documented the Laravel 13 cache class allowlist required for async results.
+- Updated PHPUnit constraints and source coverage configuration for PHPUnit 10 and 11.
+
+### Migration
+- PHP 8.2 or newer is required (Laravel 13 requires PHP 8.3 or newer).
+- After dispatching an async pipeline, use the Context returned by `$pending->result()` or `$pending->wait()`; the handle's public properties retain the original submission.
+- Order-item validation errors use field keys such as `item_0.quantity` with flat message lists.
+
+### Fixed
+- Resolve queued results explicitly with `AsyncContext::result()` or `wait()` without mutating readonly batch state; public handle properties remain the submission snapshot.
+- Aggregate and clean up exact job cache keys across cache drivers, retaining final results and reporting missing or failed jobs.
+- Serialize batch callbacks without capturing the pipeline; invoke completion callbacks after execution.
+- Autowire agent and middleware classes through Laravel's container.
+- Fail explicitly when validation rules require an unavailable Laravel validator.
+- Evaluate configured content routes by priority, including patterns, types, tags, metadata, predicates, and fallback routing.
+
+- Handle native PHP date objects in timing metadata, read async dynamic metadata safely, and validate IPv4 CIDR masks.
+- Made payment test fixtures independent of the calendar year; corrected static-analysis findings and standardized source formatting.
+- Made coverage reporting opt-in and raised the analysis command's memory allowance to 512 MB.
+- Excluded development-only files from distribution archives.
+
 ## [0.2.1] - 2025-08-27
 
 ### 🔧 Refactor: 30% Code Reduction

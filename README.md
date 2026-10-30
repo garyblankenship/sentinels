@@ -6,6 +6,23 @@
 
 Turn messy, monolithic Laravel services into clean, testable, observable pipelines. Sentinels transforms your 300-line service classes into focused agents that you can compose, test, and debug with surgical precision. When something breaks at 3 AM, you'll know exactly which step failed and why.
 
+## Requirements
+
+- PHP 8.2 or later, including PHP 8.5.
+- Laravel 9–13. Laravel 11 and 12 require PHP 8.2 or later; Laravel 13 requires PHP 8.3 or later.
+
+### Laravel 13 async cache configuration
+
+Laravel 13 applications disable cache object unserialization by default. Async pipelines cache `Context` objects, so add this class to the `serializable_classes` allowlist in your application's `config/cache.php`:
+
+```php
+'serializable_classes' => [
+    \Vampires\Sentinels\Core\Context::class,
+],
+```
+
+Merge this with any existing allowlist and include any object classes intentionally stored in your pipeline payload or metadata. Keep the allowlist explicit. Rebuild cached configuration and restart queue workers after changing it.
+
 ## ⚡ See the Difference Immediately
 
 ```php
@@ -33,43 +50,25 @@ $result = Sentinels::pipeline()
 // Every step is logged, timed, and traceable. Debug like a detective. 🕵️‍♂️
 ```
 
-## ⚡ Now with Transparent Async Execution
+## ⚡ Queued Async Execution
 
-Need true parallel processing? Just add one word:
+Dispatch parallel work through Laravel queues, then explicitly retrieve the completed context:
 
 ```php
-// 🔄 Synchronous (good for quick operations)
-$result = Sentinels::pipeline()
-    ->mode('parallel') 
-    ->pipe(new ApiCallAgent())         // Takes 2 seconds
-    ->pipe(new DatabaseAgent())        // Takes 1 second  
-    ->pipe(new EmailServiceAgent())    // Takes 3 seconds
-    ->through($data);
-// Total time: ~6 seconds (sequential simulation)
-
-// ⚡ Asynchronous (blazing fast for I/O operations)
-$result = Sentinels::pipeline()
+$pending = Sentinels::pipeline()
     ->mode('parallel')
-    ->async()  // 👈 Only difference - one word!
-    ->pipe(new ApiCallAgent())         // All three run
-    ->pipe(new DatabaseAgent())        // in parallel on
-    ->pipe(new EmailServiceAgent())    // separate workers
+    ->async()
+    ->pipe(new ApiCallAgent())
+    ->pipe(new DatabaseAgent())
+    ->pipe(new EmailServiceAgent())
     ->through($data);
-// Total time: ~3 seconds (true parallel execution)
 
-// Use results exactly the same way - transparent!
-echo $result->payload;           // Auto-waits, then works like sync
-echo $result->getElapsedTime();  // See the performance difference
-echo $result->correlationId;     // Same observability features
-
-// Power users get monitoring for free
-if ($result->isAsync()) {
-    echo "Progress: " . $result->getProgress() . "%";
-    echo "Batch ID: " . $result->getBatchId();
-}
+echo "Progress: " . $pending->getProgress() . "%";
+$result = $pending->result(timeout: 60); // wait() also returns the completed Context
+$payload = $result->payload;
 ```
 
-**The Laravel Way**: Same mental model, same API, same error handling. Async execution is transparent - no callbacks, promises, or new patterns to learn. Taylor Otwell would approve! 🎉
+The pending handle's public properties contain the original submission. Use the context returned by `result()` or `wait()` for completed payloads, metadata, and errors. Configure queue workers, batch storage, and a shared cache as described in [the pipeline guide](docs/pipelines.md#asynchronous-pipeline-execution).
 
 ## 🎯 Why Laravel Developers Need Sentinels
 
@@ -250,7 +249,7 @@ These are the core pain points that drive developers to Sentinels. But what make
 
 - **🚦 Smart Routing That Actually Works**: Route based on content, not just sequence. Premium users get the VIP pipeline. Failed payments get the retry flow. Same codebase, intelligent decisions.
 
-- **⚡ Transparent Async Execution**: Add `->async()` and get true parallel processing. No new mental models - async works exactly like sync. Auto-waiting properties, same error handling, same API. Taylor Otwell-approved simplicity.
+- **⚡ Queued Async Execution**: Dispatch with `->mode('parallel')->async()`, monitor progress, and retrieve completed results with `->result()`.
 
 - **📊 Production Insights for Free**: Built-in metrics, performance tracking, and error correlation. See which agents are slow, which fail most, and optimize based on real data.
 
@@ -290,7 +289,8 @@ $result = Sentinels::pipeline()
     ->pipe(new SlackNotificationAgent())     // Send to Slack
     ->through($notificationRequest);
 
-// All channels processed simultaneously, results aggregated automatically
+// Wait for all channels and retrieve the aggregated Context
+$result = $result->result();
 echo "Notifications sent: " . count($result->payload);
 echo "Delivery rate: " . $result->getSuccessRate() . "%";
 ```
@@ -320,7 +320,8 @@ $orderResult = Sentinels::pipeline()
     ->pipe(new TaxCalculationAgent())        // Calculate taxes
     ->through($orderData);
 
-// All validations run simultaneously, results available immediately
+// Retrieve completed validation results before checking errors
+$orderResult = $orderResult->result();
 if ($orderResult->hasErrors()) {
     return $orderResult->errors;             // Show validation failures
 }
@@ -339,7 +340,7 @@ echo "Order processed in " . $orderResult->getElapsedTime() . " seconds";
 - **🔍 Pinpoint Failures**: When step 3 of 8 fails, you know immediately which agent and why
 - **🧪 Test with Confidence**: Mock external APIs, test edge cases, verify each step independently  
 - **🔀 Handle Complexity**: Premium customers? VIP pipeline. Failed payment? Retry flow. Same codebase.
-- **⚡ Transparent Async**: Add `->async()` for true parallel execution. Same API, better performance. No callbacks or promises to learn.
+- **⚡ Queued Async**: Dispatch parallel work with `->async()` and retrieve the completed context with `->result()`.
 - **📊 Progressive Monitoring**: Simple by default, detailed batch statistics available for power users and ops teams
 
 Ready to see the potential impact on your team? Here's the strategic value Sentinels is designed to deliver:

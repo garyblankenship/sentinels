@@ -114,8 +114,8 @@ class BaseAgentTest extends TestCase
         $agent = new TestAgent();
 
         $this->assertEquals('Test Agent', $agent->getName());
-        $this->assertIsString($agent->getDescription());
-        $this->assertIsArray($agent->getTags());
+        $this->assertSame('Test agent for unit testing', $agent->getDescription());
+        $this->assertSame(['test', 'fixture'], $agent->getTags());
         $this->assertContains('test', $agent->getTags());
         $this->assertGreaterThan(0, $agent->getEstimatedExecutionTime());
     }
@@ -138,8 +138,9 @@ class BaseAgentTest extends TestCase
         $agent1 = new TestAgent();
         $agent2 = new TestAgent();
 
-        $this->assertIsString($agent1->getId());
-        $this->assertIsString($agent2->getId());
+        $this->assertNotEmpty($agent1->getId());
+        $this->assertSame($agent1->getId(), $agent1->getId());
+        $this->assertNotEmpty($agent2->getId());
         $this->assertNotEquals($agent1->getId(), $agent2->getId());
     }
 
@@ -179,7 +180,7 @@ class BaseAgentTest extends TestCase
     {
         $agent = new TestAgent();
 
-        $this->assertIsArray($agent->getRequiredPermissions());
+        $this->assertSame([], $agent->getRequiredPermissions());
         $this->assertEmpty($agent->getRequiredPermissions()); // Default: no permissions
     }
 

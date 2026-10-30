@@ -3,7 +3,6 @@
 namespace Vampires\Sentinels\Tests\Integration;
 
 use Illuminate\Foundation\Auth\User;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Vampires\Sentinels\Agents\BaseAgent;
 use Vampires\Sentinels\Agents\ExternalServiceAgent;
@@ -20,7 +19,7 @@ class ElegantPatternsTest extends TestCase
     public function test_complete_order_processing_workflow(): void
     {
         // Create a mock user
-        $user = new class extends User {
+        $user = new class () extends User {
             public $id = 123;
             public $email = 'customer@example.com';
             public $name = 'John Doe';
@@ -55,7 +54,7 @@ class ElegantPatternsTest extends TestCase
             ->build();
 
         // Create validation agent
-        $validationAgent = new class extends BaseAgent {
+        $validationAgent = new class () extends BaseAgent {
             use ValidatesOrder;
 
             protected function handle(Context $context): Context
@@ -80,7 +79,7 @@ class ElegantPatternsTest extends TestCase
         };
 
         // Create inventory check service
-        $inventoryService = new class extends ExternalServiceAgent {
+        $inventoryService = new class () extends ExternalServiceAgent {
             protected function callService(mixed $data, Context $context): mixed
             {
                 // Simulate inventory check API call
@@ -106,7 +105,7 @@ class ElegantPatternsTest extends TestCase
 
         // Create order processing pipeline with debugging
         $pipeline = Pipeline::create()
-            ->tap(fn($ctx) => $this->assertInstanceOf(Context::class, $ctx))
+            ->tap(fn ($ctx) => $this->assertInstanceOf(Context::class, $ctx))
             ->pipe($validationAgent)
             ->validate(function (Context $context) {
                 return !$context->hasErrors();
@@ -120,8 +119,10 @@ class ElegantPatternsTest extends TestCase
                 if (isset($orderData['items'])) {
                     $orderData['status'] = 'confirmed';
                     $orderData['confirmed_at'] = now()->toISOString();
+
                     return $context->with($orderData);
                 }
+
                 return $context;
             })
             ->logContext('info', 'Order processing completed');
@@ -139,7 +140,7 @@ class ElegantPatternsTest extends TestCase
         $this->assertTrue($result->getMetadata('order_validated'));
         $this->assertTrue($result->getMetadata('external_service_success'));
         $this->assertEquals('inventory_service', $result->getMetadata('service_name'));
-        
+
         // Context Builder assertions
         $this->assertEquals(123, $result->getMetadata('user_id'));
         $this->assertEquals('customer@example.com', $result->getMetadata('user_email'));
@@ -159,7 +160,7 @@ class ElegantPatternsTest extends TestCase
             'reference_id' => 'PAY-2023-001',
             'card_number' => '4111111111111111', // Test Visa card
             'expiry_month' => 12,
-            'expiry_year' => 2025,
+            'expiry_year' => (int) date('Y') + 1,
             'cvv' => '123',
         ];
 
@@ -171,7 +172,7 @@ class ElegantPatternsTest extends TestCase
             ->build();
 
         // Create payment validation agent
-        $paymentValidator = new class extends BaseAgent {
+        $paymentValidator = new class () extends BaseAgent {
             use ValidatesPayment;
 
             protected function handle(Context $context): Context
@@ -196,10 +197,10 @@ class ElegantPatternsTest extends TestCase
                 'success' => true,
                 'transaction_id' => 'TXN-12345',
                 'status' => 'completed',
-            ], 200)
+            ], 200),
         ]);
 
-        $paymentGateway = new class extends ExternalServiceAgent {
+        $paymentGateway = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for this test
 
             protected function callService(mixed $data, Context $context): mixed
@@ -274,7 +275,7 @@ class ElegantPatternsTest extends TestCase
             ->build();
 
         // Create user validation agent
-        $userValidator = new class extends BaseAgent {
+        $userValidator = new class () extends BaseAgent {
             use ValidatesUser;
 
             protected function handle(Context $context): Context
@@ -299,7 +300,7 @@ class ElegantPatternsTest extends TestCase
         };
 
         // Mock email verification service
-        $emailService = new class extends ExternalServiceAgent {
+        $emailService = new class () extends ExternalServiceAgent {
             protected function callService(mixed $data, Context $context): mixed
             {
                 // Simulate email verification API
@@ -335,6 +336,7 @@ class ElegantPatternsTest extends TestCase
                 $userData = $payload;
                 $userData['password'] = 'HASHED_' . $userData['password'];
                 unset($userData['password_confirmation']);
+
                 return $context->with($userData);
             })
             ->pipe($emailService)
@@ -347,7 +349,7 @@ class ElegantPatternsTest extends TestCase
                     'email_verified' => false,
                     'created_at' => now()->toISOString(),
                 ];
-                
+
                 return $context->with($userRecord);
             })
             ->logContext('info', 'User registration completed');
@@ -379,7 +381,7 @@ class ElegantPatternsTest extends TestCase
             ->build();
 
         // Agent that always fails
-        $failingAgent = new class extends BaseAgent {
+        $failingAgent = new class () extends BaseAgent {
             protected function handle(Context $context): Context
             {
                 throw new \Exception('Agent failure for testing');
@@ -387,9 +389,9 @@ class ElegantPatternsTest extends TestCase
         };
 
         // External service that fails but has fallback
-        $failingService = new class extends ExternalServiceAgent {
+        $failingService = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for this test
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 throw new \Exception('Service unavailable');
@@ -456,7 +458,8 @@ class ElegantPatternsTest extends TestCase
 
         // Create a pipeline with multiple agents and debugging
         $pipeline = Pipeline::create()
-            ->tap(function () { /* Measure tap overhead */ })
+            ->tap(function () { /* Measure tap overhead */
+            })
             ->pipe(function (mixed $payload, Context $context) {
                 // Simple processing agent
                 return $context->withMetadata('processed', true);
@@ -468,6 +471,7 @@ class ElegantPatternsTest extends TestCase
             ->pipe(function (mixed $payload, Context $context) {
                 // Simulate some processing time
                 usleep(1000); // 1ms
+
                 return $context->withMetadata('performance_processed', microtime(true));
             })
             ->ray('Performance Complete')
@@ -529,85 +533,100 @@ class ElegantPatternsTest extends TestCase
         // Create comprehensive checkout pipeline
         $pipeline = Pipeline::create()
             // Step 1: Validate cart and pricing
-            ->pipe(new class extends BaseAgent {
+            ->pipe(new class () extends BaseAgent {
                 use ValidatesOrder;
-                
+
                 protected function handle(Context $context): Context
                 {
                     $cartValidation = $this->validateOrderAmounts($context->payload['cart']);
                     if (!$cartValidation->valid) {
                         return $context->addErrors($cartValidation->getAllErrors());
                     }
+
                     return $context->withMetadata('cart_validated', true);
                 }
             })
             ->dump('Cart Validated')
-            
-            // Step 2: Check inventory  
-            ->pipe(new class extends ExternalServiceAgent {
+
+            // Step 2: Check inventory
+            ->pipe(new class () extends ExternalServiceAgent {
                 protected bool $preservePayload = false; // Handle payload manually
-                
+
                 protected function callService(mixed $data, Context $context): mixed
                 {
                     // Preserve original data and add inventory results
                     $inventoryResult = ['inventory_reserved' => true, 'reservation_id' => 'RES-' . uniqid()];
+
                     return array_merge($data, ['inventory_results' => $inventoryResult]);
                 }
-                protected function getServiceName(): string { return 'inventory_service'; }
+                protected function getServiceName(): string
+                {
+                    return 'inventory_service';
+                }
             })
-            
+
             // Step 3: Process payment
-            ->pipe(new class extends ExternalServiceAgent {
+            ->pipe(new class () extends ExternalServiceAgent {
                 use ValidatesPayment;
                 protected bool $preservePayload = false; // Handle payload manually
-                
+
                 protected function callService(mixed $data, Context $context): mixed
                 {
                     $paymentValidation = $this->validatePaymentAmount($data['payment']);
                     if (!$paymentValidation->valid) {
                         throw new \Exception('Payment validation failed');
                     }
-                    
+
                     // Preserve original data and add payment results
                     $paymentResult = [
                         'payment_successful' => true,
                         'transaction_id' => 'TXN-' . uniqid(),
                         'charged_amount' => $data['payment']['amount'],
                     ];
+
                     return array_merge($data, ['payment_results' => $paymentResult]);
                 }
-                protected function getServiceName(): string { return 'payment_processor'; }
+                protected function getServiceName(): string
+                {
+                    return 'payment_processor';
+                }
             })
             ->ray('Payment Processed')
-            
+
             // Step 4: Create order
             ->pipe(function (mixed $payload, Context $context) {
                 $orderData = $payload;
                 $orderData['order_id'] = 'ORD-' . uniqid();
                 $orderData['status'] = 'confirmed';
                 $orderData['created_at'] = now()->toISOString();
+
                 return $context->with($orderData);
             })
-            
+
             // Step 5: Send confirmation email
-            ->pipe(new class extends ExternalServiceAgent {
+            ->pipe(new class () extends ExternalServiceAgent {
                 protected function callService(mixed $data, Context $context): mixed
                 {
                     $emailResult = ['email_sent' => true, 'email_id' => 'EMAIL-' . uniqid()];
+
                     return array_merge($data, ['email_results' => $emailResult]);
                 }
-                protected function getServiceName(): string { return 'email_service'; }
+                protected function getServiceName(): string
+                {
+                    return 'email_service';
+                }
                 protected function getFallbackResponse(mixed $data, Context $context): mixed
                 {
                     $emailResult = ['email_sent' => false, 'queued_for_retry' => true];
+
                     return array_merge($data, ['email_results' => $emailResult]);
                 }
             })
-            
+
             ->logContext('info', 'Checkout completed successfully')
             ->validate(function (Context $context) {
-                return isset($context->payload['order_id']) && 
-                       isset($context->payload['status']) && 
+                return isset($context->payload['order_id']) &&
+                       isset($context->payload['status']) &&
                        $context->payload['status'] === 'confirmed';
             }, 'Order creation failed');
 
@@ -620,10 +639,10 @@ class ElegantPatternsTest extends TestCase
         $this->assertTrue($result->getMetadata('cart_validated'));
         $this->assertTrue($result->hasTag('ecommerce'));
         $this->assertTrue($result->hasTag('realtime'));
-        
+
         // Verify all external services were called successfully
         $this->assertTrue($result->getMetadata('external_service_success'));
-        
+
         // Verify the complex data structure is preserved
         $this->assertEquals(1159.77, $result->payload['cart']['total']);
         $this->assertEquals('customer@shop.com', $result->payload['customer']['email']);

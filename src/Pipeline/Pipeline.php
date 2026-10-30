@@ -53,7 +53,7 @@ class Pipeline implements PipelineContract
     /**
      * Error handler callback.
      *
-     * @var callable(Context, \Throwable): Context|null
+     * @var (callable(Context, \Throwable): mixed)|null
      */
     protected $errorHandler = null;
 
@@ -97,16 +97,16 @@ class Pipeline implements PipelineContract
 
     /**
      * Process the given input through the pipeline.
-     * 
+     *
      * For sync pipelines, returns the final payload.
-     * For async pipelines, returns AsyncContext for transparent handling.
+     * For async pipelines, returns AsyncContext; call result() to resolve it.
      */
     public function through(mixed $input): mixed
     {
         $context = Context::create($input);
         $result = $this->process($context);
 
-        // For async contexts, return the context itself for transparent API
+        // Return the async handle so callers can resolve the completed context.
         if ($result instanceof AsyncContext) {
             return $result;
         }
@@ -119,7 +119,7 @@ class Pipeline implements PipelineContract
      * Process the given context through the pipeline.
      *
      * Returns Context for synchronous execution or AsyncContext for asynchronous execution.
-     * Both extend Context, so the API remains identical.
+     * AsyncContext properties describe the submission; result() returns the final Context.
      *
      * @return Context Context for sync, AsyncContext for async (both are Context)
      */
@@ -147,6 +147,11 @@ class Pipeline implements PipelineContract
                 PipelineMode::MapReduce => $this->processMapReduce($context),
             };
 
+            // Submission is not completion: callbacks and completion events run in the batch.
+            if ($result instanceof AsyncContext) {
+                return $result;
+            }
+
             // Check if result has errors and call error handler
             if ($result->hasErrors() && $this->errorHandler) {
                 // Create a generic exception from the context errors
@@ -164,7 +169,6 @@ class Pipeline implements PipelineContract
             $this->fireEvent(new PipelineCompleted($context, $result, $this));
 
             return $result;
-
         } catch (\Throwable $exception) {
             if ($this->errorHandler) {
                 $result = call_user_func($this->errorHandler, $context, $exception);
@@ -334,31 +338,33 @@ class Pipeline implements PipelineContract
     protected function dispatchAsyncBatch(Context $context, array $agents): AsyncContext
     {
         $jobs = [];
-        
+        $jobIds = [];
+        $agentClasses = [];
+
         // Create a job for each agent
         foreach ($agents as $agent) {
             $agentClass = is_string($agent) ? $agent : get_class($agent);
-            $jobId = uniqid('job_', true);
-            
+            $jobId = 'job_' . count($jobs);
+            $jobIds[] = $jobId;
+            $agentClasses[] = $agentClass;
+
             $jobs[] = new AgentExecutionJob($context, $agentClass, $jobId);
         }
 
         $batchName = 'Sentinels Pipeline - ' . $context->correlationId;
-        
+
         $batch = Bus::batch($jobs)
             ->name($batchName)
-            ->then(function (Batch $batch) use ($context) {
-                $this->handleBatchCompletion($batch, $context);
-            })
-            ->catch(function (Batch $batch, \Throwable $e) use ($context) {
-                $this->handleBatchFailure($batch, $context, $e);
-            })
-            ->finally(function (Batch $batch) {
-                $this->handleBatchCleanup($batch);
-            })
+            ->withOption('sentinels_job_ids', $jobIds)
+            ->finally(new AsyncBatchCallback(
+                $context,
+                $agentClasses,
+                $this->successCallback,
+                $this->errorHandler
+            ))
             ->dispatch();
 
-        // Return AsyncContext that transparently handles the batch
+        // Return a handle whose result() resolves the completed batch context
         return AsyncContext::createWithBatch(
             originalPayload: $context->payload,
             originalMetadata: $context->metadata,
@@ -373,93 +379,42 @@ class Pipeline implements PipelineContract
     }
 
     /**
-     * Handle successful batch completion.
+     * Finalize a batch from its serializable callback after all jobs settle.
+     *
+     * @internal
      */
-    protected function handleBatchCompletion(Batch $batch, Context $originalContext): void
+    public function completeAsyncBatch(Batch $batch, Context $originalContext): void
     {
-        try {
-            // Inline result aggregation
-            $finalContext = $this->aggregateBatchResults($batch, $originalContext);
-            
-            // Store final result for retrieval
-            $this->storeFinalBatchResult($batch, $finalContext);
-            
-            // Call success callback if defined
-            if ($this->successCallback) {
-                call_user_func($this->successCallback, $finalContext);
-            }
-            
-            // Fire pipeline completed event
-            $this->fireEvent(new PipelineCompleted($originalContext, $finalContext, $this));
-            
-        } catch (\Throwable $e) {
-            // Log the aggregation error but don't fail the batch
-            if (app()->bound('log')) {
-                app('log')->error('Failed to aggregate batch results', [
-                    'batch_id' => $batch->id,
-                    'error' => $e->getMessage(),
-                    'context_id' => $originalContext->correlationId,
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Handle batch failure.
-     */
-    protected function handleBatchFailure(Batch $batch, Context $originalContext, \Throwable $exception): void
-    {
-        try {
-            // Create error context
-            $errorContext = $originalContext->addError(
-                'Batch execution failed: ' . $exception->getMessage()
-            );
-            
-            // Store error result
-            $this->storeFinalBatchResult($batch, $errorContext);
-            
-            // Call error handler if defined
-            if ($this->errorHandler) {
-                call_user_func($this->errorHandler, $errorContext, $exception);
-            }
-            
-        } catch (\Throwable $e) {
-            // Log the error handling failure
-            if (app()->bound('log')) {
-                app('log')->error('Failed to handle batch failure', [
-                    'batch_id' => $batch->id,
-                    'original_error' => $exception->getMessage(),
-                    'handler_error' => $e->getMessage(),
-                    'context_id' => $originalContext->correlationId,
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Handle batch cleanup.
-     */
-    protected function handleBatchCleanup(Batch $batch): void
-    {
-        // Schedule cleanup after a delay to ensure results can be retrieved
-        dispatch(function () use ($batch) {
-            // Clean up batch cache entries
-            $patterns = [
-                "sentinels:batch:{$batch->id}:result:*",
-                "sentinels:batch:{$batch->id}:error:*",
-                "sentinels:batch:{$batch->id}:final",
-            ];
-            
-            foreach ($patterns as $pattern) {
-                if (method_exists(Cache::getStore(), 'connection')) {
-                    // Redis implementation
-                    $keys = Cache::getStore()->connection()->keys($pattern);
-                    foreach ($keys as $key) {
-                        Cache::forget($key);
-                    }
+        $finalContext = $this->aggregateBatchResults($batch, $originalContext);
+        if ($finalContext->hasErrors() && $this->errorHandler) {
+            try {
+                $handled = call_user_func(
+                    $this->errorHandler,
+                    $finalContext,
+                    new \RuntimeException(implode('; ', $finalContext->errors))
+                );
+                if ($handled instanceof Context) {
+                    $finalContext = $handled;
                 }
+            } catch (\Throwable $exception) {
+                $finalContext = $finalContext->addError('Async error handler failed: ' . $exception->getMessage());
             }
-        })->delay(60);
+        } elseif (!$finalContext->hasErrors() && $this->successCallback) {
+            try {
+                call_user_func($this->successCallback, $finalContext);
+            } catch (\Throwable $exception) {
+                $finalContext = $finalContext->addError('Async success callback failed: ' . $exception->getMessage());
+            }
+        }
+
+        $this->storeFinalBatchResult($batch, $finalContext);
+        $this->fireEvent(new PipelineCompleted($originalContext, $finalContext, $this));
+
+        // The final Context survives for the configured TTL; intermediate entries are no longer needed.
+        foreach ($batch->options['sentinels_job_ids'] ?? [] as $jobId) {
+            Cache::forget("sentinels:batch:{$batch->id}:result:{$jobId}");
+            Cache::forget("sentinels:batch:{$batch->id}:error:{$jobId}");
+        }
     }
 
     /**
@@ -467,33 +422,17 @@ class Pipeline implements PipelineContract
      */
     protected function aggregateBatchResults(Batch $batch, Context $originalContext): Context
     {
-        // Fetch successful results
         $results = collect();
-        $resultPattern = "sentinels:batch:{$batch->id}:result:*";
-        
-        if (method_exists(Cache::getStore(), 'connection')) {
-            $keys = Cache::getStore()->connection()->keys($resultPattern);
-            foreach ($keys as $key) {
-                $result = Cache::get($key);
-                if ($result instanceof Context) {
-                    $jobId = basename($key);
-                    $results->put($jobId, $result);
-                }
-            }
-        }
-
-        // Fetch error results  
         $errors = collect();
-        $errorPattern = "sentinels:batch:{$batch->id}:error:*";
-        
-        if (method_exists(Cache::getStore(), 'connection')) {
-            $keys = Cache::getStore()->connection()->keys($errorPattern);
-            foreach ($keys as $key) {
-                $error = Cache::get($key);
-                if (is_array($error)) {
-                    $jobId = basename($key);
-                    $errors->put($jobId, $error);
-                }
+        foreach ($batch->options['sentinels_job_ids'] ?? [] as $jobId) {
+            $result = Cache::get("sentinels:batch:{$batch->id}:result:{$jobId}");
+            $error = Cache::get("sentinels:batch:{$batch->id}:error:{$jobId}");
+            if ($result instanceof Context) {
+                $results->put($jobId, $result);
+            } elseif (is_array($error)) {
+                $errors->put($jobId, $error);
+            } else {
+                $errors->put($jobId, ['message' => "No result available for {$jobId}"]);
             }
         }
 
@@ -506,11 +445,11 @@ class Pipeline implements PipelineContract
         foreach ($results as $jobId => $resultContext) {
             // Collect payloads into an array
             $aggregatedPayload[$jobId] = $resultContext->payload;
-            
+
             // Merge metadata and tags
             $mergedMetadata = array_merge($mergedMetadata, $resultContext->metadata);
             $mergedTags = array_unique(array_merge($mergedTags, $resultContext->tags));
-            
+
             // Collect any errors from individual contexts
             $allErrors = array_merge($allErrors, $resultContext->errors);
         }
@@ -522,6 +461,13 @@ class Pipeline implements PipelineContract
                 $error['agent_class'] ?? 'unknown',
                 $error['message'] ?? 'Unknown error'
             );
+        }
+
+        if ($batch->cancelled()) {
+            $allErrors[] = 'Async pipeline batch was cancelled';
+        }
+        if ($batch->failedJobs > 0 && $errors->isEmpty()) {
+            $allErrors[] = "Async pipeline batch has {$batch->failedJobs} failed jobs";
         }
 
         // Create the final aggregated context
@@ -537,7 +483,7 @@ class Pipeline implements PipelineContract
             correlationId: $originalContext->correlationId,
             tags: array_merge($mergedTags, ['async_parallel']),
             traceId: $originalContext->traceId,
-            cancelled: $originalContext->cancelled,
+            cancelled: $originalContext->cancelled || $batch->cancelled(),
             errors: $allErrors,
             startTime: $originalContext->startTime,
         );
@@ -606,7 +552,7 @@ class Pipeline implements PipelineContract
      * Process stages in parallel.
      *
      * When async mode is enabled, agents are dispatched to queues and
-     * an AsyncContext is returned for transparent result handling.
+     * an AsyncContext is returned for explicit result() or wait() resolution.
      * Otherwise, uses the existing simulated parallel execution.
      *
      * @return Context Context for sync, AsyncContext for async
@@ -744,6 +690,7 @@ class Pipeline implements PipelineContract
     {
         return $this->pipe(function (mixed $payload, Context $context) use ($callback): Context {
             call_user_func($callback, $context);
+
             return $context;
         });
     }
@@ -756,7 +703,7 @@ class Pipeline implements PipelineContract
      *
      * @param string|null $label Optional label for the dump output
      */
-    public function dump(string $label = null): self
+    public function dump(?string $label = null): self
     {
         return $this->pipe(function (mixed $payload, Context $context) use ($label): Context {
             if (function_exists('dump')) {
@@ -776,6 +723,7 @@ class Pipeline implements PipelineContract
                     dump($output);
                 }
             }
+
             return $context;
         });
     }
@@ -788,7 +736,7 @@ class Pipeline implements PipelineContract
      *
      * @param string|null $label Optional label for the Ray output
      */
-    public function ray(string $label = null): self
+    public function ray(?string $label = null): self
     {
         return $this->pipe(function (mixed $payload, Context $context) use ($label): Context {
             if (function_exists('ray')) {
@@ -804,6 +752,7 @@ class Pipeline implements PipelineContract
                     dump('Ray Debug', $context->toArray());
                 }
             }
+
             return $context;
         });
     }
@@ -820,7 +769,7 @@ class Pipeline implements PipelineContract
      */
     public function logContext(
         string $level = 'debug',
-        string $message = null,
+        ?string $message = null,
         array $excludeKeys = ['password', 'token', 'secret', 'key']
     ): self {
         return $this->pipe(function (mixed $payload, Context $context) use ($level, $message, $excludeKeys): Context {
@@ -850,6 +799,7 @@ class Pipeline implements PipelineContract
             $message = $message ?? 'Pipeline context debug';
 
             app('log')->{$level}($message, $logData);
+
             return $context;
         });
     }
@@ -860,7 +810,7 @@ class Pipeline implements PipelineContract
      * Adds validation step with custom validation logic.
      * Continues processing if validation passes, adds errors if not.
      *
-     * @param callable(Context): bool|array $validator Validation callback
+     * @param callable(Context): (bool|array) $validator Validation callback
      * @param string $errorMessage Error message if validation fails
      */
     public function validate(callable $validator, string $errorMessage = 'Pipeline validation failed'): self
@@ -883,62 +833,11 @@ class Pipeline implements PipelineContract
     /**
      * Create a new pipeline instance.
      */
-    public static function create(AgentMediator $mediator = null, EventDispatcher $events = null): self
+    public static function create(?AgentMediator $mediator = null, ?EventDispatcher $events = null): self
     {
         $mediator ??= app(AgentMediator::class);
         $events ??= app(EventDispatcher::class);
 
         return new self($mediator, $events);
-    }
-}
-
-/**
- * Helper class for conditional pipeline stages.
- */
-class ConditionalStage
-{
-    public function __construct(
-        protected $condition,
-        protected PipelineContract $truePipeline,
-        protected ?PipelineContract $falsePipeline = null
-    ) {
-    }
-
-    public function __invoke(Context $context): Context
-    {
-        $shouldExecuteTrue = call_user_func($this->condition, $context);
-
-        if ($shouldExecuteTrue) {
-            return $this->truePipeline->process($context);
-        } elseif ($this->falsePipeline) {
-            return $this->falsePipeline->process($context);
-        }
-
-        return $context;
-    }
-}
-
-/**
- * Helper class for map operations.
- */
-class MapStage
-{
-    public function __construct(
-        protected $mapper
-    ) {
-    }
-
-    public function __invoke(Context $context): Context
-    {
-        if (!is_iterable($context->payload)) {
-            return $context;
-        }
-
-        $mapped = [];
-        foreach ($context->payload as $key => $value) {
-            $mapped[$key] = call_user_func($this->mapper, $value, $key, $context);
-        }
-
-        return $context->with($mapped);
     }
 }

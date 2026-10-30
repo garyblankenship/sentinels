@@ -2,8 +2,8 @@
 
 namespace Vampires\Sentinels\Agents;
 
+use Illuminate\Contracts\Validation\Factory as ValidationFactory;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Factory as ValidationFactory;
 use Vampires\Sentinels\Contracts\AgentContract;
 use Vampires\Sentinels\Core\Context;
 use Vampires\Sentinels\Core\RetryPolicy;
@@ -74,7 +74,6 @@ abstract class BaseAgent implements AgentContract
             $result = $this->afterExecute($context, $result);
 
             return $result->withMetadata('agent_executed', $this->getName());
-
         } catch (\Throwable $exception) {
             return $this->onError($context, $exception);
         }
@@ -338,9 +337,12 @@ abstract class BaseAgent implements AgentContract
      */
     protected function validateWithRules(mixed $data, array $rules, array $messages = []): ValidationResult
     {
-        if (!app()->bound(ValidationFactory::class)) {
-            // Fallback if validation factory is not available
+        if ($rules === []) {
             return ValidationResult::valid($data);
+        }
+
+        if (!app()->bound(ValidationFactory::class)) {
+            throw new \LogicException('Laravel validation factory is required to validate agent rules.');
         }
 
         $validator = app(ValidationFactory::class)->make(

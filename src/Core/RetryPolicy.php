@@ -135,8 +135,7 @@ readonly class RetryPolicy
         $delay = match ($this->backoffStrategy) {
             'fixed' => $this->baseDelay,
             'linear' => $this->baseDelay * $attempt,
-            'exponential' => (int) ($this->baseDelay * pow($this->multiplier, $attempt - 1)),
-            default => $this->baseDelay,
+            default => (int) ($this->baseDelay * pow($this->multiplier, $attempt - 1)),
         };
 
         return min($delay, $this->maxDelay);
@@ -256,7 +255,7 @@ readonly class RetryPolicy
     /**
      * Create a new policy with different delays.
      */
-    public function withDelays(int $baseDelay, int $maxDelay = null): self
+    public function withDelays(int $baseDelay, ?int $maxDelay = null): self
     {
         return new self(
             maxAttempts: $this->maxAttempts,

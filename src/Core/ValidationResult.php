@@ -2,7 +2,7 @@
 
 namespace Vampires\Sentinels\Core;
 
-use Illuminate\Validation\Validator;
+use Illuminate\Contracts\Validation\Validator;
 
 /**
  * Immutable result of context validation.
@@ -67,7 +67,7 @@ readonly class ValidationResult
      */
     public static function fromValidator(Validator $validator): self
     {
-        if ($validator->passes()) {
+        if (!$validator->fails()) {
             return self::valid(
                 sanitizedInput: $validator->validated(),
                 metadata: ['validator_used' => true]

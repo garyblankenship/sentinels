@@ -19,9 +19,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_successful_service_call(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 return ['result' => 'success', 'data' => $data];
@@ -44,9 +44,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_service_call_failure_uses_fallback(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 throw new Exception('Service unavailable');
@@ -74,9 +74,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_service_call_failure_without_fallback(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 throw new Exception('Service unavailable');
@@ -98,9 +98,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_circuit_breaker_opens_after_failures(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected array $circuitBreaker = [
                 'failure_threshold' => 2,
                 'recovery_timeout' => 60,
@@ -142,8 +142,8 @@ class ExternalServiceAgentTest extends TestCase
     public function test_caching_successful_responses(): void
     {
         $callCount = 0;
-        
-        $agent = new class($callCount) extends ExternalServiceAgent {
+
+        $agent = new class ($callCount) extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
             private int $callCount;
 
@@ -155,6 +155,7 @@ class ExternalServiceAgentTest extends TestCase
             protected function callService(mixed $data, Context $context): mixed
             {
                 $this->callCount++;
+
                 return ['call_count' => $this->callCount, 'data' => $data];
             }
 
@@ -179,9 +180,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_rate_limiting(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected array $rateLimiting = [
                 'enabled' => true,
                 'requests_per_minute' => 1, // Only 1 request per minute
@@ -218,12 +219,12 @@ class ExternalServiceAgentTest extends TestCase
     public function test_http_get_helper(): void
     {
         Http::fake([
-            'https://api.example.com/test' => Http::response(['success' => true], 200)
+            'https://api.example.com/test' => Http::response(['success' => true], 200),
         ]);
 
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 return $this->get('https://api.example.com/test');
@@ -247,12 +248,12 @@ class ExternalServiceAgentTest extends TestCase
     public function test_http_post_helper(): void
     {
         Http::fake([
-            'https://api.example.com/create' => Http::response(['created' => true], 201)
+            'https://api.example.com/create' => Http::response(['created' => true], 201),
         ]);
 
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 return $this->post('https://api.example.com/create', $data);
@@ -269,7 +270,7 @@ class ExternalServiceAgentTest extends TestCase
 
         $this->assertEquals(['created' => true], $result->payload);
         Http::assertSent(function ($request) {
-            return $request->url() === 'https://api.example.com/create' 
+            return $request->url() === 'https://api.example.com/create'
                 && $request->data() === ['name' => 'Test'];
         });
     }
@@ -277,12 +278,12 @@ class ExternalServiceAgentTest extends TestCase
     public function test_http_error_handling(): void
     {
         Http::fake([
-            'https://api.example.com/error' => Http::response(['error' => 'Not found'], 404)
+            'https://api.example.com/error' => Http::response(['error' => 'Not found'], 404),
         ]);
 
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 return $this->get('https://api.example.com/error');
@@ -308,9 +309,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_retry_policy_configuration(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected array $httpConfig = [
                 'timeout' => 15,
                 'retry_attempts' => 2,
@@ -336,9 +337,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_estimated_execution_time(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected array $httpConfig = [
                 'timeout' => 10,
                 'retry_attempts' => 3,
@@ -365,9 +366,9 @@ class ExternalServiceAgentTest extends TestCase
 
     public function test_tags_include_service_information(): void
     {
-        $agent = new class extends ExternalServiceAgent {
+        $agent = new class () extends ExternalServiceAgent {
             protected bool $preservePayload = false; // Use legacy behavior for unit tests
-            
+
             protected function callService(mixed $data, Context $context): mixed
             {
                 return ['success' => true];
