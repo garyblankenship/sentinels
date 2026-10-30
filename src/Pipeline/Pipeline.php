@@ -355,6 +355,7 @@ class Pipeline implements PipelineContract
 
         $batch = Bus::batch($jobs)
             ->name($batchName)
+            ->onQueue(config('sentinels.async.queue', 'default'))
             ->withOption('sentinels_job_ids', $jobIds)
             ->finally(new AsyncBatchCallback(
                 $context,

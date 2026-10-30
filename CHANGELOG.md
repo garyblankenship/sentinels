@@ -4,6 +4,22 @@ All notable changes to `sentinels` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-30
+
+### Fixed
+- Apply the configured async queue to the Laravel batch so jobs reach workers listening on that queue.
+- Honor `sentinels.async.job_timeout` and `sentinels.async.job_tries` when constructing queued jobs.
+- Correct Laravel-version-specific batch setup commands, PHP examples, queue job traits, unsupported API examples, and timeout documentation.
+
+### Added
+- A native Laravel 13 companion guide pairing all 40 README examples with recommended framework approaches and execution tradeoffs.
+- A separate-process database queue regression test covering queue routing, configured job limits, callbacks, and shared-cache result retrieval.
+
+### Upgrade notes
+- Run workers on the configured `sentinels.async.queue`; batch dispatch now honors that setting instead of falling back to the queue connection's default.
+- Configured async job timeout and attempt limits now take effect. Keep timeouts several seconds below the queue connection's `retry_after`, and restart long-running workers after deployment.
+- `Pipeline::timeout()` remains descriptive metadata; it does not enforce synchronous execution limits. Use async job configuration and I/O client timeouts where appropriate.
+
 ## [0.3.0] - 2026-10-30
 
 ### Changed

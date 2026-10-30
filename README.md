@@ -257,7 +257,7 @@ These are the core pain points that drive developers to Sentinels. But what make
 
 - **🔀 Conditional Logic That Makes Sense**: Branch, merge, loop, and compose pipelines. Handle complex business logic without drowning in if-statements.
 
-- **⚙️ Zero-Configuration Laravel Integration**: Works with your service container, events, middleware, and queues. Add it to existing projects in minutes.
+- **⚙️ Laravel Integration**: Works with your service container, events, middleware, and queues. Queued pipelines require workers, batch storage, and shared cache configuration; see [async setup](docs/pipelines.md#configuration).
 
 Sounds interesting? Here are the types of problems Sentinels is designed to solve:
 
@@ -431,10 +431,11 @@ $pipeline = Sentinels::pipeline()
 #### **Resource Optimization**
 ```php
 // Different execution strategies for different needs
+config(['sentinels.async.queue' => 'high-priority']);
+
 Sentinels::pipeline()
-    ->mode('parallel')     // Use multiple CPU cores
-    ->queue('high-priority') // Dedicated queue resources
-    ->timeout(30)          // Prevent resource hogging
+    ->mode('parallel')
+    ->async()             // Run agents through configured queue workers
     ->pipe($agents)
     ->through($data);
 ```
@@ -683,7 +684,6 @@ return [
             'paths' => ['app/Agents', 'app/Pipelines'],
         ],
         'execution' => [
-            'timeout' => 30,
             'memory_limit' => '128M',
         ],
     ],
@@ -694,8 +694,8 @@ return [
         'tracing' => ['enabled' => env('SENTINELS_TRACING', false)],
     ],
     
-    'queue' => [
-        'connection' => 'default',
+    // Uses the application's default Laravel queue connection.
+    'async' => [
         'queue' => 'sentinels',
     ],
 ];
@@ -716,6 +716,8 @@ php artisan sentinels:list --stats
 ```
 
 ## 🔄 When to Use Sentinels vs Alternatives
+
+For a practical comparison, see [Every README example using native Laravel 13](docs/native-laravel.md): each Sentinels example is paired with a recommended Laravel approach and its execution tradeoffs.
 
 ### Feature Comparison Matrix
 
@@ -847,7 +849,7 @@ Like Laravel provides everything you need for web apps, Sentinels provides every
 - **Artisan commands** for code generation
 - **Testing utilities** that feel like Laravel's
 - **Event system** integration out of the box  
-- **Queue support** with zero configuration
+- **Queue support** using Laravel workers, batch storage, and a shared cache; see [async setup](docs/pipelines.md#configuration)
 
 ### **"Progressive Disclosure"**
 Start simple, add complexity only when needed:
@@ -862,12 +864,12 @@ Sentinels::pipeline()
     ->through($data);
 
 // Level 3: Advanced features when you need them
+config(['sentinels.async.queue' => 'priority']);
+
 Sentinels::pipeline()
     ->mode('parallel')
-    ->withRetries(3)
-    ->onQueue('priority')
+    ->async()
     ->pipe(new ComplexAgent())
-    ->branch($condition, $truePipeline, $falsePipeline)
     ->through($data);
 ```
 

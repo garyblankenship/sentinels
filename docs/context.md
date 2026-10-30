@@ -73,11 +73,23 @@ class OrderController extends Controller
 ### From Queue Jobs
 
 ```php
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+
 class ProcessOrderJob implements ShouldQueue
 {
-    public function handle(Order $order)
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public function __construct(public Order $order)
     {
-        $context = Context::create($order)
+    }
+
+    public function handle(): void
+    {
+        $context = Context::create($this->order)
             ->withMetadata('queue', 'orders')
             ->withMetadata('attempts', $this->attempts())
             ->withTag('queued')

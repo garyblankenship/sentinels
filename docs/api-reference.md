@@ -509,7 +509,7 @@ public function through(mixed $payload): Context
 // Set execution mode
 public function mode(string $mode): self
 
-// Set execution timeout in seconds
+// Record timeout metadata in seconds; does not enforce an execution limit
 public function timeout(int $seconds): self
 
 // Add error handler
@@ -864,16 +864,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Timeout
-    |--------------------------------------------------------------------------
-    |
-    | Default timeout in seconds for pipeline execution.
-    |
-    */
-    'default_timeout' => env('SENTINELS_DEFAULT_TIMEOUT', 300),
-
-    /*
-    |--------------------------------------------------------------------------
     | Retry Policy
     |--------------------------------------------------------------------------
     |
@@ -944,7 +934,7 @@ return [
     'pipelines' => [
         'example' => [
             'mode' => 'sequential',
-            'timeout' => 120,
+            'timeout' => 120, // Metadata only; not an enforced execution limit.
             'agents' => [
                 // Agent class names or configurations
             ],
@@ -975,7 +965,6 @@ All configuration values can be set via environment variables:
 ```bash
 # Execution Configuration
 SENTINELS_DEFAULT_MODE=sequential
-SENTINELS_DEFAULT_TIMEOUT=300
 
 # Retry Configuration
 SENTINELS_RETRY_TYPE=exponential_backoff
@@ -1162,21 +1151,20 @@ protected $listen = [
 
 ### Queue Integration
 
-Agents can be dispatched to queues:
+Dispatch normal agents through an asynchronous parallel pipeline. Sentinels wraps each agent in its internal Laravel queue job; agents do not implement `ShouldQueue` or use a package queue trait:
 
 ```php
-use Vampires\Sentinels\Queue\QueueableAgent;
+use Vampires\Sentinels\Facades\Sentinels;
 
-class AsyncAgent extends BaseAgent implements ShouldQueue
-{
-    use QueueableAgent;
-    
-    protected function handle(Context $context): Context
-    {
-        // This will be executed on a queue worker
-        return $context;
-    }
-}
+$pending = Sentinels::pipeline()
+    ->mode('parallel')
+    ->async()
+    ->pipe(new ProcessOrderAgent())
+    ->through($orderData);
+
+$result = $pending->result(timeout: 60);
 ```
+
+Configure workers, batch storage, and a shared cache using the [async pipeline setup](pipelines.md#configuration). To queue a sequential pipeline instead, call it from the `handle()` method of an ordinary Laravel job.
 
 This comprehensive API reference covers all public interfaces and methods available in the Sentinels framework. Use it as your definitive guide when building agent-based processing pipelines.

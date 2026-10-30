@@ -358,7 +358,6 @@ class OrderProcessingPipeline
     public function process(Order $order): Context
     {
         return Sentinels::pipeline()
-            ->timeout(30) // 30 second timeout
             ->pipe(new ValidateOrderAgent())
             ->pipe(new ProcessPaymentAgent(app(PaymentGateway::class)))
             ->pipe(new UpdateInventoryAgent())
@@ -660,7 +659,6 @@ class CsvImportPipeline
         $rules = array_merge($defaultRules, $validationRules);
 
         return Sentinels::pipeline()
-            ->timeout(300) // 5 minute timeout
             ->pipe(new ReadCsvAgent())
             ->pipe(new ValidateRecordsAgent($rules))
             ->pipe(new TransformRecordsAgent())

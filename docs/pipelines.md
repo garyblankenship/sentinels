@@ -135,13 +135,24 @@ $result = $pending->wait(timeout: 60);
 
 ### Configuration
 
-Configure a queue connection, Laravel batch storage, and a cache store shared by dispatchers and workers. Multiple workers are needed for concurrent execution. Run the worker on the configured queue (default `sentinels`):
+Configure a non-synchronous queue connection, Laravel batch storage, and a cache store shared by dispatchers and workers. Multiple workers are needed for concurrent execution. Create the batch table migration if your application does not already have it:
 
 ```sh
+# Laravel 11–13
+php artisan make:queue-batches-table
+
+# Laravel 9–10
 php artisan queue:batches-table
+```
+
+Run the command for your Laravel version, then migrate and start a worker on the configured queue (default `sentinels`):
+
+```sh
 php artisan migrate
 php artisan queue:work --queue=sentinels
 ```
+
+See the official batching setup for [Laravel 11–13](https://laravel.com/docs/13.x/queues#job-batching) and [Laravel 9–10](https://laravel.com/docs/10.x/queues#job-batching). Your selected queue connection may require additional storage, such as the `jobs` table for the database driver.
 
 Tune the package in `config/sentinels.php`:
 
@@ -163,14 +174,15 @@ A web controller may return the batch ID immediately instead of blocking on `res
 
 ### Timeout Settings
 
-Set maximum execution time:
+For queued async agents, set the Laravel job timeout in package configuration:
 
 ```php
-$result = Sentinels::pipeline()
-    ->timeout(120) // 120 seconds max
-    ->pipe(new SlowApiCallAgent())
-    ->through($data);
+config(['sentinels.async.job_timeout' => 120]);
 ```
+
+Laravel requires PHP's PCNTL extension to enforce job timeouts. Follow [Laravel's timeout and retry guidance](https://laravel.com/docs/13.x/queues#job-expirations-and-timeouts), including keeping the timeout several seconds shorter than the queue connection's `retry_after`. Configure timeouts on external I/O clients as well.
+
+The fluent `Pipeline::timeout()` value is currently descriptive metadata; it does not interrupt synchronous execution or override queued job timeouts. The timeout passed to `AsyncContext::result()` controls how long the caller waits, not how long a worker may run.
 
 ### Error Handling
 
@@ -666,7 +678,7 @@ Externalize pipeline configuration:
 // config/pipelines.php
 return [
     'order_processing' => [
-        'timeout' => 120,
+        'timeout' => 120, // Metadata only; not an enforced execution limit.
         'mode' => 'sequential',
         'agents' => [
             ValidateOrderAgent::class,
@@ -687,7 +699,7 @@ class PipelineFactory
         $config = config("pipelines.{$name}");
         
         $pipeline = Sentinels::pipeline()
-            ->timeout($config['timeout'])
+            ->timeout($config['timeout']) // Records metadata only.
             ->mode($config['mode']);
             
         foreach ($config['agents'] as $agentClass) {

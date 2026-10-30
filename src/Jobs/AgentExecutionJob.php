@@ -50,6 +50,8 @@ class AgentExecutionJob implements ShouldQueue
         public string $jobIdentifier
     ) {
         $this->queue = config('sentinels.async.queue', 'default');
+        $this->timeout = (int) config('sentinels.async.job_timeout', 120);
+        $this->tries = (int) config('sentinels.async.job_tries', 3);
     }
 
     /**
