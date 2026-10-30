@@ -42,7 +42,7 @@ class OrderService {
 // 🚀 After: Clean, testable, traceable pipeline
 $result = Sentinels::pipeline()
     ->pipe(new ValidateInventoryAgent())    // ✅ Single responsibility
-    ->pipe(new ProcessPaymentAgent())       // ✅ Individual error handling  
+    ->pipe(new ProcessPaymentAgent())       // ✅ Individual error handling
     ->pipe(new UpdateInventoryAgent())      // ✅ Easy to test in isolation
     ->pipe(new SendNotificationAgent())     // ✅ Automatic correlation IDs
     ->pipe(new UpdateAnalyticsAgent())      // ✅ Built-in performance metrics
@@ -78,11 +78,11 @@ The pending handle's public properties contain the original submission. Use the 
 
 ```php
 // Instead of this monolithic service...
-class OrderProcessor 
+class OrderProcessor
 {
     public function process($order) {
         $this->validateOrder($order);
-        $this->checkInventory($order);  
+        $this->checkInventory($order);
         $this->processPayment($order);
         $this->sendNotification($order);
         // 200+ lines of tightly coupled logic...
@@ -123,10 +123,10 @@ class ProcessOrderAgent extends BaseAgent
     protected function handle(Context $context): Context
     {
         $order = $context->payload;
-        
+
         // Do your processing here
         $processedOrder = $this->processOrder($order);
-        
+
         return $context->with($processedOrder);
     }
 }
@@ -137,10 +137,10 @@ class ProcessOrderAgent extends BaseAgent
 // Simple processing
 $result = Sentinels::process($order, new ProcessOrderAgent());
 
-// Or build a pipeline  
+// Or build a pipeline
 $result = Sentinels::pipeline()
     ->pipe(new ValidateOrderAgent())
-    ->pipe(new ProcessOrderAgent()) 
+    ->pipe(new ProcessOrderAgent())
     ->pipe(new SendEmailAgent())
     ->through($order);
 
@@ -158,7 +158,7 @@ class OrderService {
     public function processOrder($order) {
         // 🔥 This method has EVERYTHING:
         $this->validateStuff($order);      // 50 lines of validation
-        $this->chargePayment($order);      // 75 lines of payment logic  
+        $this->chargePayment($order);      // 75 lines of payment logic
         $this->doShipping($order);         // 40 lines of shipping
         $this->sendEmails($order);         // 60 lines of notifications
         $this->updateAnalytics($order);    // 35 lines of tracking
@@ -169,7 +169,7 @@ class OrderService {
 // ✅ Clean, focused, debuggable pipeline
 $result = Sentinels::pipeline()
     ->pipe(new ValidateOrderAgent())       // ✅ 25 lines, one job
-    ->pipe(new ChargePaymentAgent())       // ✅ Testable in isolation  
+    ->pipe(new ChargePaymentAgent())       // ✅ Testable in isolation
     ->pipe(new HandleShippingAgent())      // ✅ Mock external APIs easily
     ->pipe(new SendNotificationAgent())    // ✅ Individual error handling
     ->pipe(new TrackAnalyticsAgent())      // ✅ Single responsibility
@@ -182,25 +182,25 @@ $result = Sentinels::pipeline()
 // ❌ Production breaks at 3 AM. The log says:
 Log::error("Something broke in order processing");
 
-// 😰 Which of the 15 steps failed? What data caused it? 
+// 😰 Which of the 15 steps failed? What data caused it?
 // Where do you even start looking? Time to wake up the entire team...
 
 // ✅ Sentinels gives you DETECTIVE-LEVEL debugging:
 // Every request gets a correlation ID that traces through EVERYTHING:
 
 [2024-01-15 03:07:43] INFO: Agent starting
-  • agent: ValidateOrderAgent  
+  • agent: ValidateOrderAgent
   • correlation_id: req_789abc123
   • user_id: 12345
   • input_state: {...}
 
-[2024-01-15 03:07:44] ERROR: Agent failed  
+[2024-01-15 03:07:44] ERROR: Agent failed
   • agent: ProcessPaymentAgent ⬅️ FOUND THE CULPRIT!
   • correlation_id: req_789abc123
   • error: "Card declined: insufficient funds"
   • execution_time: 1.2s
 
-// Now you know EXACTLY what broke, for which user, and why. 
+// Now you know EXACTLY what broke, for which user, and why.
 // Fix it in 5 minutes instead of 2 hours. 😎
 ```
 
@@ -210,12 +210,12 @@ Log::error("Something broke in order processing");
 class BlogProcessor {
     public function process($post) {
         $this->validateContent($post);    // 30 lines of validation
-        $this->optimizeImages($post);     // 45 lines of image processing  
+        $this->optimizeImages($post);     // 45 lines of image processing
         $this->generateSEO($post);        // 25 lines of SEO logic
     }
 }
 
-class ProductProcessor {  
+class ProductProcessor {
     public function process($product) {
         $this->validateContent($product);  // Copy-pasted (but slightly different)
         $this->optimizeImages($product);   // Copy-pasted (with bugs)
@@ -270,7 +270,7 @@ Here are the most compelling ways you could use Sentinels to transform your comp
 // Process user input through multiple AI analysis steps
 $result = Sentinels::pipeline()
     ->pipe(new ContentModerationAgent())      // Check for harmful content
-    ->pipe(new LanguageDetectionAgent())      // Detect input language  
+    ->pipe(new LanguageDetectionAgent())      // Detect input language
     ->pipe(new IntentClassificationAgent())   // Classify user intent
     ->pipe(new ResponseGenerationAgent())     // Generate appropriate response
     ->pipe(new QualityAssuranceAgent())       // Validate response quality
@@ -284,7 +284,7 @@ $result = Sentinels::pipeline()
     ->mode('parallel')
     ->async()                                 // 👈 True parallel delivery!
     ->pipe(new EmailNotificationAgent())     // Send email
-    ->pipe(new SMSNotificationAgent())       // Send SMS  
+    ->pipe(new SMSNotificationAgent())       // Send SMS
     ->pipe(new PushNotificationAgent())      // Send push notification
     ->pipe(new SlackNotificationAgent())     // Send to Slack
     ->through($notificationRequest);
@@ -338,7 +338,7 @@ echo "Order processed in " . $orderResult->getElapsedTime() . " seconds";
 
 **Why These Patterns Work So Well:**
 - **🔍 Pinpoint Failures**: When step 3 of 8 fails, you know immediately which agent and why
-- **🧪 Test with Confidence**: Mock external APIs, test edge cases, verify each step independently  
+- **🧪 Test with Confidence**: Mock external APIs, test edge cases, verify each step independently
 - **🔀 Handle Complexity**: Premium customers? VIP pipeline. Failed payment? Retry flow. Same codebase.
 - **⚡ Queued Async**: Dispatch parallel work with `->async()` and retrieve the completed context with `->result()`.
 - **📊 Progressive Monitoring**: Simple by default, detailed batch statistics available for power users and ops teams
@@ -387,7 +387,7 @@ Event::listen(PipelineCompleted::class, function ($event) {
     // Track conversion funnel metrics
     Metrics::increment('orders.processed');
     Metrics::timing('orders.processing_time', $event->getExecutionTime());
-    
+
     // Identify bottlenecks in real-time
     if ($event->getExecutionTime() > 5000) {
         Alert::send('Slow order processing detected');
@@ -419,7 +419,7 @@ $pipeline = Sentinels::pipeline()
 
 // Integrates with monitoring tools
 // - Prometheus metrics
-// - OpenTelemetry traces  
+// - OpenTelemetry traces
 // - ELK stack logs
 ```
 
@@ -455,12 +455,12 @@ class AgentQualityTest extends TestCase
     public function test_all_agents_have_tests()
     {
         $agents = glob('app/Agents/**/*Agent.php');
-        
+
         foreach ($agents as $agentFile) {
             $testFile = str_replace('app/', 'tests/Unit/', $agentFile);
             $testFile = str_replace('.php', 'Test.php', $testFile);
-            
-            $this->assertFileExists($testFile, 
+
+            $this->assertFileExists($testFile,
                 "Missing test for {$agentFile}");
         }
     }
@@ -469,7 +469,7 @@ class AgentQualityTest extends TestCase
 
 #### **Architecture Evolution**
 - Start simple with **synchronous pipelines**
-- Scale to **async processing** without code changes  
+- Scale to **async processing** without code changes
 - Evolve to **distributed systems** using same patterns
 
 ### 📊 Expected Benefits
@@ -608,7 +608,7 @@ class ResilientAgent extends BaseAgent
             maxDelay: 10000
         );
     }
-    
+
     protected function handle(Context $context): Context
     {
         // This will retry with exponential backoff on failure
@@ -652,19 +652,19 @@ class AgentTest extends TestCase
         // Use test helpers
         $context = $this->createTestContext('input');
         $agent = new MyAgent();
-        
+
         $result = $agent($context);
-        
+
         $this->assertEquals('expected', $result->payload);
         $this->assertTrue($result->hasMetadata('processed'));
     }
-    
+
     public function test_with_fake_agents()
     {
         Sentinels::fake();
-        
+
         Sentinels::process('input', MyAgent::class);
-        
+
         Sentinels::assertAgentRan(MyAgent::class);
     }
 }
@@ -677,7 +677,7 @@ Configure Sentinels in `config/sentinels.php`:
 ```php
 return [
     'default_mode' => PipelineMode::Sequential,
-    
+
     'agents' => [
         'discovery' => [
             'enabled' => true,
@@ -687,13 +687,13 @@ return [
             'memory_limit' => '128M',
         ],
     ],
-    
+
     'observability' => [
         'events' => ['enabled' => true],
         'metrics' => ['enabled' => true],
         'tracing' => ['enabled' => env('SENTINELS_TRACING', false)],
     ],
-    
+
     // Uses the application's default Laravel queue connection.
     'async' => [
         'queue' => 'sentinels',
@@ -757,7 +757,7 @@ $result = Sentinels::pipeline()
     ->branch(                                 // Step 2: Conditional logic
         fn($ctx) => $ctx->hasTag('premium'),
         $premiumPipeline,                     // Premium user flow
-        $standardPipeline                     // Standard user flow  
+        $standardPipeline                     // Standard user flow
     )
     ->pipe(new AuditLogAgent())              // Step 3: Always audit
     ->through($userRequest);
@@ -793,15 +793,15 @@ $agent->setRetryPolicy(RetryPolicy::exponential(
 #### ✅ **Team Collaboration & Testing**
 ```php
 // When multiple developers work on the same workflow:
-class PaymentProcessingTest extends TestCase 
+class PaymentProcessingTest extends TestCase
 {
-    public function test_payment_flow() 
+    public function test_payment_flow()
     {
         Sentinels::fake();
-        
+
         // Test just your agent in isolation
         $result = PaymentPipeline::process($orderContext);
-        
+
         Sentinels::assertAgentRan(ValidateCardAgent::class);
         Sentinels::assertAgentRan(ChargePaymentAgent::class);
     }
@@ -810,10 +810,10 @@ class PaymentProcessingTest extends TestCase
 
 ### **Don't Use Sentinels When:**
 
-❌ **Simple, one-step transformations** → Use Laravel Pipeline  
-❌ **Fire-and-forget background jobs** → Use Job Chains  
-❌ **System events with multiple listeners** → Use Events/Listeners  
-❌ **Rapid prototyping** → Use simple Service classes  
+❌ **Simple, one-step transformations** → Use Laravel Pipeline
+❌ **Fire-and-forget background jobs** → Use Job Chains
+❌ **System events with multiple listeners** → Use Events/Listeners
+❌ **Rapid prototyping** → Use simple Service classes
 ❌ **Performance is critical over maintainability** → Use optimized custom solutions
 
 ## 🌟 Laravel Philosophy Alignment
@@ -848,7 +848,7 @@ tests/Unit/ProcessOrderAgentTest.php // Standard test location
 Like Laravel provides everything you need for web apps, Sentinels provides everything for workflows:
 - **Artisan commands** for code generation
 - **Testing utilities** that feel like Laravel's
-- **Event system** integration out of the box  
+- **Event system** integration out of the box
 - **Queue support** using Laravel workers, batch storage, and a shared cache; see [async setup](docs/pipelines.md#configuration)
 
 ### **"Progressive Disclosure"**
@@ -882,10 +882,10 @@ class OrderPipelineTest extends TestCase
     {
         // Familiar Laravel testing patterns
         Sentinels::fake();
-        
+
         // Process with confidence
         $result = OrderPipeline::process($order);
-        
+
         // Laravel-style assertions
         Sentinels::assertAgentRan(ValidateOrderAgent::class);
         $this->assertTrue($result->isSuccessful());
